@@ -4,39 +4,38 @@ from PIL import Image
 from google import genai
 from google.genai import types
 import json
-import sqlite3
 import datetime
+from supabase import create_client, Client # <--- Nova biblioteca
 
 # ==========================================
-# CONFIGURAÇÃO DO BANCO DE DADOS
+# CONFIGURAÇÃO DO BANCO DE DADOS (SUPABASE)
 # ==========================================
-conn = sqlite3.connect('prontuario.db', check_same_thread=False)
-c = conn.cursor()
-
-def criar_tabela():
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS historico (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            paciente TEXT,
-            data TEXT,
-            medico TEXT,
-            tipo_documento TEXT,
-            resumo TEXT
-        )
-    ''')
-    conn.commit()
+# Ligar ao Supabase usando as chaves secretas
+supabase_url = st.secrets["SUPABASE_URL"]
+supabase_key = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(supabase_url, supabase_key)
 
 def salvar_registro(paciente, data, medico, tipo_documento, resumo):
-    c.execute('''
-        INSERT INTO historico (paciente, data, medico, tipo_documento, resumo)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (paciente, data, medico, tipo_documento, resumo))
-    conn.commit()
+    # Organiza os dados num formato que o Supabase entende (dicionário)
+    dados = {
+        "paciente": paciente,
+        "data": data,
+        "medico": medico,
+        "tipo_documento": tipo_documento,
+        "resumo": resumo
+    }
+    # Envia para a tabela 'historico' na nuvem
+    supabase.table("historico").insert(dados).execute()
 
 def carregar_historico():
-    return pd.read_sql('SELECT * FROM historico', conn)
-
-criar_tabela()
+    # Pede todos os dados da tabela
+    resposta = supabase.table("historico").select("*").execute()
+    
+    # Transforma a resposta numa tabela Pandas, se houver dados
+    if resposta.data:
+        return pd.DataFrame(resposta.data)
+    else:
+        return pd.DataFrame() # Retorna tabela vazia se não houver registos
 
 # Inicializa variável de memória para os dados temporários da IA
 if "dados_ia" not in st.session_state:
@@ -47,15 +46,17 @@ if "dados_ia" not in st.session_state:
 # ==========================================
 st.set_page_config(page_title="Caderno do Paciente", page_icon="📖", layout="centered")
 
-st.title("📖 Caderno do Paciente")
-api_key = st.secrets["GEMINI_API_KEY"]
+st.title("📖 Caderno do Paciente (Nuvem)")
 
-# Criando as abas (Tabs) como um caderno
+# Verificação segura da Chave do Gemini
+if "GEMINI_API_KEY" in st.secrets:
+    api_key = st.secrets["GEMINI_API_KEY"]
+else:
+    api_key = ""
+    st.error("⚠️ Falta a chave GEMINI_API_KEY nos Secrets.")
+
 tab1, tab2 = st.tabs(["📝 Novo Registo", "🗂️ Histórico (O Caderno)"])
 
-# ------------------------------------------
-# SEPARADOR 1: NOVO REGISTO
-# ------------------------------------------
 with tab1:
     st.write("Insira os dados e a foto para a IA preencher a ficha.")
     nome_paciente = st.text_input("Nome do Paciente:", value="Paciente Teste")
@@ -65,7 +66,6 @@ with tab1:
         imagem = Image.open(foto_upload)
         st.image(imagem, caption="Documento", width=300)
 
-    # Botão para chamar a IA
     if foto_upload and api_key and st.button("Ler com Inteligência Artificial"):
         with st.spinner("A ler documento..."):
             try:
@@ -86,20 +86,17 @@ with tab1:
                     config=types.GenerateContentConfig(response_mime_type="application/json")
                 )
                 
-                # Guarda os dados temporariamente na sessão para o formulário
                 st.session_state.dados_ia = json.loads(response.text)
                 st.success("Leitura concluída! Por favor, reveja os dados abaixo.")
             except Exception as e:
                 st.error(f"Erro: {e}")
 
-    # Formulário Interativo (Só aparece depois de a IA ler)
     if st.session_state.dados_ia:
         st.markdown("---")
         st.subheader("⚙️ Rever e Confirmar")
         
         dados = st.session_state.dados_ia
         
-        # Tenta converter a data da IA para o formato do calendário do Streamlit
         try:
             data_padrao = datetime.datetime.strptime(dados.get("data", ""), "%Y-%m-%d").date()
         except:
@@ -108,30 +105,19 @@ with tab1:
         with st.form("form_confirmacao"):
             st.info("Pode editar qualquer campo caso a IA não tenha lido corretamente.")
             
-            # Campos Editáveis
             data_final = st.date_input("Data do Registo", value=data_padrao)
             medico_final = st.text_input("Médico", value=dados.get("medico", ""))
             tipo_final = st.text_input("Tipo de Documento", value=dados.get("tipo_documento", ""))
             resumo_final = st.text_area("Resumo / Informações", value=dados.get("resumo", ""))
             
-            confirmar = st.form_submit_button("✅ Guardar no Caderno")
+            confirmar = st.form_submit_button("✅ Guardar na Nuvem Permanente")
             
             if confirmar:
-                salvar_registro(
-                    nome_paciente, 
-                    str(data_final), 
-                    medico_final, 
-                    tipo_final, 
-                    resumo_final
-                )
-                # Limpa os dados temporários após salvar
+                salvar_registro(nome_paciente, str(data_final), medico_final, tipo_final, resumo_final)
                 st.session_state.dados_ia = None
                 st.success("Registo guardado com sucesso! Vá ao separador 'Histórico' para ver.")
                 st.rerun()
 
-# ------------------------------------------
-# SEPARADOR 2: HISTÓRICO (O CADERNO)
-# ------------------------------------------
 with tab2:
     st.subheader("Consultar Registos")
     df = carregar_historico()
@@ -142,7 +128,6 @@ with tab2:
         
         df_filtrado = df[df["paciente"] == paciente_sel].sort_values(by="data", ascending=False)
         
-        # Cria visualização de "Cartões" para parecer um diário/caderno
         for idx, row in df_filtrado.iterrows():
             with st.container():
                 st.markdown(f"### 🗓️ {row['data']} - {row['tipo_documento']}")
@@ -150,4 +135,4 @@ with tab2:
                 st.markdown(f"**📝 Detalhes:** {row['resumo']}")
                 st.markdown("---")
     else:
-        st.info("O caderno está vazio. Adicione um novo registo no outro separador.")
+        st.info("O caderno está vazio. Adicione um novo registo.")
