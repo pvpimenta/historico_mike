@@ -48,7 +48,7 @@ if "dados_ia" not in st.session_state:
 st.set_page_config(page_title="Caderno do Paciente", page_icon="📖", layout="centered")
 
 st.title("📖 Caderno do Paciente")
-api_key = st.sidebar.text_input("Insira sua Gemini API Key:", type="password")
+api_key = st.secrets["GEMINI_API_KEY"]
 
 # Criando as abas (Tabs) como um caderno
 tab1, tab2 = st.tabs(["📝 Novo Registo", "🗂️ Histórico (O Caderno)"])
