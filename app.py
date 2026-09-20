@@ -39,6 +39,15 @@ def carregar_historico():
         st.error(f"Erro ao carregar dados do Supabase: {e}")
         return pd.DataFrame() # Retorna tabela vazia para não quebrar a página
 
+
+
+def excluir_registro(id_registro):
+    try:
+        # Pede ao Supabase para apagar a linha onde o 'id' seja igual ao do botão clicado
+        supabase.table("historico").delete().eq("id", id_registro).execute()
+    except Exception as e:
+        st.error(f"Erro ao excluir do Supabase: {e}")
+        
 # Inicializa variável de memória para os dados temporários da IA
 if "dados_ia" not in st.session_state:
     st.session_state.dados_ia = None
