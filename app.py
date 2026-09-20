@@ -57,7 +57,7 @@ if "dados_ia" not in st.session_state:
 # ==========================================
 st.set_page_config(page_title="Caderno do Paciente", page_icon="📖", layout="centered")
 
-st.title("📖 Caderno do Paciente (Nuvem)")
+st.title("📖 Relatório do Mike")
 
 # Verificação segura da Chave do Gemini
 if "GEMINI_API_KEY" in st.secrets:
@@ -66,7 +66,7 @@ else:
     api_key = ""
     st.error("⚠️ Falta a chave GEMINI_API_KEY nos Secrets.")
 
-tab1, tab2 = st.tabs(["📝 Novo Registo", "🗂️ Histórico (O Caderno)"])
+tab1, tab2 = st.tabs(["📝 Novo Registo", "🗂️ Histórico"])
 
 with tab1:
     st.write("Insira os dados e a foto para a IA preencher a ficha.")
