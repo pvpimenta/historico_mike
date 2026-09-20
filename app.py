@@ -129,6 +129,9 @@ with tab1:
                 st.success("Registo guardado com sucesso! Vá ao separador 'Histórico' para ver.")
                 st.rerun()
 
+# ------------------------------------------
+# SEPARADOR 2: HISTÓRICO (O CADERNO)
+# ------------------------------------------
 with tab2:
     st.subheader("Consultar Registos")
     df = carregar_historico()
@@ -141,9 +144,23 @@ with tab2:
         
         for idx, row in df_filtrado.iterrows():
             with st.container():
-                st.markdown(f"### 🗓️ {row['data']} - {row['tipo_documento']}")
-                st.markdown(f"**👨‍⚕️ Médico:** {row['medico']}")
-                st.markdown(f"**📝 Detalhes:** {row['resumo']}")
+                # Dividimos em duas colunas (uma maior para o texto, outra menor para o botão)
+                col_texto, col_botao = st.columns([4, 1])
+                
+                with col_texto:
+                    st.markdown(f"### 🗓️ {row['data']} - {row['tipo_documento']}")
+                    st.markdown(f"**👨‍⚕️ Médico:** {row['medico']}")
+                    st.markdown(f"**📝 Detalhes:** {row['resumo']}")
+                
+                with col_botao:
+                    # st.write("") usado para empurrar o botão um pouco para baixo e alinhar
+                    st.write("") 
+                    st.write("")
+                    # O "key" usa o ID do banco de dados para nunca apagar o item errado
+                    if st.button("🗑️ Excluir", key=f"excluir_{row['id']}"):
+                        excluir_registro(row['id'])
+                        st.rerun() # Atualiza a página instantaneamente para fazer o item sumir
+                        
                 st.markdown("---")
     else:
         st.info("O caderno está vazio. Adicione um novo registo.")
