@@ -57,7 +57,7 @@ st.set_page_config(page_title="Relatório do Mike", page_icon="🐶", layout="ce
 col_titulo, col_logo = st.columns([4, 1])
 with col_titulo:
     st.title("🐶 Relatório do Mike")
-    st.markdown("*O diário inteligente de saúde do seu melhor amigo.*")
+    st.markdown("*O diário inteligente do KimDim.*")
 
 if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
