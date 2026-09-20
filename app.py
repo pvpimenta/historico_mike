@@ -57,7 +57,7 @@ st.set_page_config(page_title="Relatório do Mike", page_icon="🏥", layout="ce
 col_titulo, col_logo = st.columns([4, 1])
 with col_titulo:
     st.title("🏥 Relatório do Mike")
-    st.markdown("*O seu assistente inteligente de saúde pessoal.*")
+    st.markdown("*Assistente inteligente para o KinDim.*")
 
 # Verificação segura da Chave do Gemini
 if "GEMINI_API_KEY" in st.secrets:
@@ -68,7 +68,7 @@ else:
 
 st.markdown("---")
 
-tab1, tab2 = st.tabs(["📝 Adicionar Novo Registo", "🗂️ O Meu Histórico"])
+tab1, tab2 = st.tabs(["📝 Adicionar Novo Registo", "🗂️ Histórico"])
 
 # ------------------------------------------
 # SEPARADOR 1: NOVO REGISTO
