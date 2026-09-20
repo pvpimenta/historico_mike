@@ -16,26 +16,28 @@ supabase_key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(supabase_url, supabase_key)
 
 def salvar_registro(paciente, data, medico, tipo_documento, resumo):
-    # Organiza os dados num formato que o Supabase entende (dicionário)
-    dados = {
-        "paciente": paciente,
-        "data": data,
-        "medico": medico,
-        "tipo_documento": tipo_documento,
-        "resumo": resumo
-    }
-    # Envia para a tabela 'historico' na nuvem
-    supabase.table("historico").insert(dados).execute()
+    try:
+        dados = {
+            "paciente": paciente,
+            "data": data,
+            "medico": medico,
+            "tipo_documento": tipo_documento,
+            "resumo": resumo
+        }
+        supabase.table("historico").insert(dados).execute()
+    except Exception as e:
+        st.error(f"Erro ao salvar no Supabase: {e}")
 
 def carregar_historico():
-    # Pede todos os dados da tabela
-    resposta = supabase.table("historico").select("*").execute()
-    
-    # Transforma a resposta numa tabela Pandas, se houver dados
-    if resposta.data:
-        return pd.DataFrame(resposta.data)
-    else:
-        return pd.DataFrame() # Retorna tabela vazia se não houver registos
+    try:
+        resposta = supabase.table("historico").select("*").execute()
+        if resposta.data:
+            return pd.DataFrame(resposta.data)
+        else:
+            return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro ao carregar dados do Supabase: {e}")
+        return pd.DataFrame() # Retorna tabela vazia para não quebrar a página
 
 # Inicializa variável de memória para os dados temporários da IA
 if "dados_ia" not in st.session_state:
