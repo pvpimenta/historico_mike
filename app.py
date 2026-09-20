@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import urllib.parse
 from PIL import Image
 from google import genai
 from google.genai import types
@@ -67,8 +68,8 @@ else:
     st.error("⚠️ Falta a chave GEMINI_API_KEY nos Secrets.")
 
 st.markdown("---")
-
-tab1, tab2 = st.tabs(["📝 Adicionar Novo Registo", "🗂️ Histórico"])
+tab1, tab2, tab3 = st.tabs(["📝 Novo Registo", "🗂️ Histórico", "⏰ Lembretes (Remédios)"])
+#tab1, tab2 = st.tabs(["📝 Adicionar Novo Registo", "🗂️ Histórico"])
 
 # ------------------------------------------
 # SEPARADOR 1: NOVO REGISTO
@@ -145,9 +146,69 @@ with tab1:
                     st.toast("Registo guardado com sucesso!", icon="🎉")
                     st.rerun()
 
+
+# ------------------------------------------
+# SEPARADOR 3: LEMBRETES E TRATAMENTOS
+# ------------------------------------------
+with tab3:
+    st.subheader("🐾 Lembretes para o Mike")
+    st.write("Agende a troca da coleira, vacinas ou medicamentos.")
+
+    with st.container(border=True):
+        with st.form("form_lembrete"):
+            item = st.text_input("O que o Mike precisa? (Ex: Coleira Seresto, Antibiótico, Vacina)")
+            
+            col_d, col_h = st.columns(2)
+            with col_d:
+                data_lembrete = st.date_input("🗓️ Data")
+            with col_h:
+                # Horário padrão ao meio-dia
+                hora_lembrete = st.time_input("⏰ Horário", value=datetime.time(12, 0))
+                
+            notas = st.text_area("📝 Observações (Ex: Dar junto com a ração)")
+
+            salvar_lembrete = st.form_submit_button("Criar Lembrete 🔔", use_container_width=True)
+
+        if salvar_lembrete:
+            if item:
+                # 1. Guarda no banco de dados para ficar no histórico do Mike
+                # Passamos "Veterinário/Casa" como médico e "Lembrete" como tipo
+                salvar_registro(
+                    nome_paciente, 
+                    str(data_lembrete), 
+                    "Veterinário / Casa", 
+                    f"Lembrete: {item}", 
+                    notas
+                )
+                
+                # 2. Criação do Link Mágico para o Google Calendar
+                # Transforma os textos para formato de link
+                titulo = urllib.parse.quote(f"🐶 Cuidar do Mike: {item}")
+                detalhes = urllib.parse.quote(notas)
+                
+                # Formata a data e hora para o padrão do Google Calendar (AAAAMMDDTHHMMSS)
+                data_str = data_lembrete.strftime("%Y%m%d")
+                hora_str = hora_lembrete.strftime("%H%M%S")
+                inicio = f"{data_str}T{hora_str}"
+                
+                # Link oficial de agendamento do Google
+                link_gcal = f"https://www.google.com/calendar/render?action=TEMPLATE&text={titulo}&dates={inicio}/{inicio}&details={detalhes}"
+                
+                st.toast("Lembrete salvo no histórico!", icon="✅")
+                
+                # Exibe um botão bonito para o utilizador clicar
+                st.info("Registo guardado! Clique no botão abaixo para ativar o alarme no seu telemóvel:")
+                st.markdown(f"""
+                <a href="{link_gcal}" target="_blank" style="background-color:#4285F4; color:white; padding:10px 20px; text-decoration:none; border-radius:8px; display:block; text-align:center; font-weight:bold; font-size:16px;">
+                📅 Adicionar Notificação ao Calendário
+                </a>
+                """, unsafe_allow_html=True)
+            else:
+                st.warning("Por favor, preencha o nome do medicamento ou coleira.")
 # ------------------------------------------
 # SEPARADOR 2: HISTÓRICO (O CADERNO)
 # ------------------------------------------
+
 with tab2:
     df = carregar_historico()
     
