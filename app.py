@@ -88,7 +88,7 @@ def executar_ia_com_fallback(prompt, json_mode=False):
     """
     provedores = [
         ("Gemini (Google gemini-3.8-flash)", _chamar_gemini),
-        ("Groq (Llama 3.3 70B)", _chamar_groq)
+        ("Groq (llama-3.3-70b-versatile)", _chamar_groq)
     ]
 
     erros = []
