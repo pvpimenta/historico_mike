@@ -9,6 +9,7 @@ import urllib.parse
 import base64
 from io import BytesIO
 from supabase import create_client, Client
+import re
 
 # Tenta importar fpdf2 para gerar PDF (se instalado)
 try:
@@ -108,9 +109,62 @@ def construir_texto_relatorio(paciente, data_inicio, data_fim, incluir_resumo, i
 
     return "\n".join(linhas)
 
+import re
+
+# ==========================================
+# FUNÇÃO PARA REMOVER EMOJIS E LIMPAR TEXTO DO PDF
+# ==========================================
+def limpar_texto_pdf(texto):
+    # Substitui marcações comuns para ficarem legíveis sem depender de emojis no PDF
+    substituicoes = {
+        "📌": "-> ", "📋": "-> ", "🗓️": "Data: ", "🏥": "Local: ",
+        "📝": "Obs: ", "📊": "Params: ", "🐶": "", "🩺": "", "☁️": "", "✨": ""
+    }
+    for emoji, text_sub in substituicoes.items():
+        texto = texto.replace(emoji, text_sub)
+        
+    # Remove qualquer outro caractere fora do padrão Latin-1
+    return re.sub(r'[^\x00-\xFF]', '', texto)
+
+# ==========================================
+# FUNÇÃO ATUALIZADA DE GERAÇÃO DE PDF
+# ==========================================
 def gerar_pdf_bytes(texto_relatorio):
     if not FPDF_DISPONIVEL:
         return None
+    
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=10)
+    
+    # Limpa emojis e caracteres não suportados pelo FPDF
+    texto_limpo = limpar_texto_pdf(texto_relatorio)
+    
+    for linha in texto_limpo.split('\n'):
+        linha_str = linha.strip()
+        
+        # Corrige o erro de linha vazia: dá um salto de linha em vez de usar multi_cell
+        if not linha_str:
+            pdf.ln(3)
+            continue
+            
+        # Formatação de Títulos
+        if "RELATORIO CLINICO" in linha_str or "RELATÓRIO CLÍNICO" in linha_str:
+            pdf.set_font("Helvetica", style="B", size=12)
+            pdf.cell(pdf.epw, 7, linha_str, align="C", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("Helvetica", size=10)
+        elif "RESUMO CLINICO" in linha_str or "HISTORICO DE REGISTROS" in linha_str:
+            pdf.ln(2)
+            pdf.set_font("Helvetica", style="B", size=10)
+            pdf.multi_cell(pdf.epw, 5, linha_str)
+            pdf.set_font("Helvetica", size=10)
+        elif linha_str.startswith("===") or linha_str.startswith("---"):
+            pdf.ln(1)
+        else:
+            # Usa pdf.epw para preencher a largura útil da página corretamente
+            pdf.multi_cell(pdf.epw, 5, linha_str)
+            
+    return bytes(pdf.output())
     
     pdf = FPDF()
     pdf.add_page()
