@@ -53,7 +53,41 @@ if "dados_ia" not in st.session_state:
 # INTERFACE DO STREAMLIT
 # ==========================================
 st.set_page_config(page_title="Relatório do Mike", page_icon="🐕", layout="centered")
-
+# ==========================================
+# BARRA LATERAL (PERFIL)
+# ==========================================
+with st.sidebar:
+    st.title("🐾 Perfil do Pet")
+    
+    # Campo para o usuário definir de qual pet é o perfil atual
+    nome_perfil = st.text_input("Nome do Paciente", value="Mike", key="nome_perfil")
+    
+    st.markdown("---")
+    
+    # Carrega a foto do banco de dados
+    foto_b64 = carregar_foto_perfil(nome_perfil)
+    
+    if foto_b64:
+        # Mostra a imagem com bordas arredondadas usando HTML/CSS
+        st.markdown(
+            f'<div style="display: flex; justify-content: center;">'
+            f'<img src="data:image/jpeg;base64,{foto_b64}" style="width:180px; height:180px; border-radius:50%; object-fit:cover; border: 3px solid #f0f2f6;">'
+            f'</div><br>', 
+            unsafe_allow_html=True
+        )
+    else:
+        st.info("Nenhuma foto de perfil encontrada. Faça o upload abaixo!")
+        
+    # Upload de nova foto
+    nova_foto = st.file_uploader("Alterar foto de perfil", type=["jpg", "jpeg", "png"])
+    if nova_foto:
+        if st.button("💾 Salvar Nova Foto", use_container_width=True):
+            img = Image.open(nova_foto)
+            # Redimensiona a imagem para não pesar no banco de dados
+            img.thumbnail((400, 400)) 
+            if salvar_foto_perfil(nome_perfil, img):
+                st.success("Foto atualizada com sucesso!")
+                st.rerun() # Atualiza a página para mostrar a nova foto
 # Cabeçalho Moderno
 col_titulo, col_logo = st.columns([4, 1])
 with col_titulo:
