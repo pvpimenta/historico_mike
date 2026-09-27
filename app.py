@@ -47,7 +47,7 @@ def _chamar_gemini(prompt, json_mode=False):
     config = types.GenerateContentConfig(response_mime_type="application/json") if json_mode else None
     
     response = client.models.generate_content(
-        model="gemini-1.5-flash",  # Modelo estável e gratuito do Google
+        model="gemini-3.8-flash",  # Modelo estável e gratuito do Google
         contents=prompt,
         config=config
     )
