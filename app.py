@@ -3,7 +3,6 @@ import pandas as pd
 from PIL import Image
 from google import genai
 from google.genai import types
-import google.generativeai as genai_old
 import time
 import json
 import datetime
