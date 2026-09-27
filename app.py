@@ -12,6 +12,10 @@ from io import BytesIO
 from supabase import create_client, Client
 import re
 
+# Novas bibliotecas de extração local
+import pdfplumber
+import pytesseract
+
 # Tenta importar fpdf2 para gerar PDF (se instalado)
 try:
     from fpdf import FPDF
@@ -25,6 +29,31 @@ except ImportError:
 supabase_url = st.secrets["SUPABASE_URL"]
 supabase_key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(supabase_url, supabase_key)
+
+# ==========================================
+# FUNÇÕES DE EXTRAÇÃO LOCAL DE TEXTO (SEM IA)
+# ==========================================
+def extrair_texto_pdf(arquivo_pdf):
+    texto_completo = ""
+    try:
+        arquivo_pdf.seek(0)
+        with pdfplumber.open(arquivo_pdf) as pdf:
+            for pagina in pdf.pages:
+                texto_pagina = pagina.extract_text()
+                if texto_pagina:
+                    texto_completo += texto_pagina + "\n"
+    except Exception as e:
+        st.error(f"Erro ao ler PDF: {e}")
+    return texto_completo
+
+def extrair_texto_imagem(imagem):
+    try:
+        # Usa o idioma 'por' (português) para reconhecer acentos
+        texto = pytesseract.image_to_string(imagem, lang='por')
+        return texto
+    except Exception as e:
+        st.error(f"Erro no OCR da imagem: {e}")
+        return ""
 
 # ==========================================
 # FUNÇÕES DO BANCO DE DADOS (HISTÓRICO)
@@ -110,24 +139,15 @@ def construir_texto_relatorio(paciente, data_inicio, data_fim, incluir_resumo, i
 
     return "\n".join(linhas)
 
-# ==========================================
-# FUNÇÃO PARA REMOVER EMOJIS E LIMPAR TEXTO DO PDF
-# ==========================================
 def limpar_texto_pdf(texto):
-    # Substitui marcações comuns para ficarem legíveis sem depender de emojis no PDF
     substituicoes = {
         "📌": "-> ", "📋": "-> ", "🗓️": "Data: ", "🏥": "Local: ",
         "📝": "Obs: ", "📊": "Params: ", "🐶": "", "🩺": "", "☁️": "", "✨": ""
     }
     for emoji, text_sub in substituicoes.items():
         texto = texto.replace(emoji, text_sub)
-        
-    # Remove qualquer outro caractere fora do padrão Latin-1
     return re.sub(r'[^\x00-\xFF]', '', texto)
 
-# ==========================================
-# FUNÇÃO ATUALIZADA DE GERAÇÃO DE PDF
-# ==========================================
 def gerar_pdf_bytes(texto_relatorio):
     if not FPDF_DISPONIVEL:
         return None
@@ -135,22 +155,15 @@ def gerar_pdf_bytes(texto_relatorio):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", size=10)
-    
-    # Limpa emojis e caracteres não suportados pelo FPDF
     texto_limpo = limpar_texto_pdf(texto_relatorio)
     
     for linha in texto_limpo.split('\n'):
         linha_str = linha.strip()
-        
-        # Corrige o erro de linha vazia: dá um salto de linha em vez de usar multi_cell
         if not linha_str:
             pdf.ln(3)
             continue
-            
-        # Formatação de Títulos
         if "RELATORIO CLINICO" in linha_str or "RELATÓRIO CLÍNICO" in linha_str:
             pdf.set_font("Helvetica", style="B", size=12)
-            # Para fpdf2, cell mudou, mas tentaremos manter retrocompatibilidade com fpdf antigo ou fpdf2
             try:
                 pdf.cell(pdf.epw, 7, linha_str, align="C", new_x="LMARGIN", new_y="NEXT")
             except Exception:
@@ -167,7 +180,6 @@ def gerar_pdf_bytes(texto_relatorio):
         elif linha_str.startswith("===") or linha_str.startswith("---"):
             pdf.ln(1)
         else:
-            # Usa pdf.epw ou 0 dependendo da versão do FPDF
             try:
                 pdf.multi_cell(pdf.epw, 5, linha_str)
             except Exception:
@@ -223,13 +235,9 @@ st.set_page_config(page_title="Relatório do Pet", page_icon="🐕", layout="cen
 # ==========================================
 with st.sidebar:
     st.title("🐾 Perfil do Pet")
-    
     nome_perfil = st.text_input("Nome do Paciente", value="Mike", key="nome_perfil")
-    
     st.markdown("---")
-    
     foto_b64 = carregar_foto_perfil(nome_perfil)
-    
     if foto_b64:
         st.markdown(
             f'<div style="display: flex; justify-content: center;">'
@@ -282,48 +290,65 @@ with tab1:
     
     arquivo_upload = st.file_uploader("Arraste a foto ou ficheiro PDF do exame", type=["jpg", "jpeg", "png", "pdf"])
     
-    documento_ia = None
+    # Variáveis para guardar o texto extraído e a imagem
+    texto_extraido = ""
+    imagem_carregada = None
     
     if arquivo_upload:
         if arquivo_upload.type == "application/pdf":
             st.info(f"📄 Ficheiro PDF carregado: {arquivo_upload.name}")
-            documento_ia = types.Part.from_bytes(
-                data=arquivo_upload.getvalue(),
-                mime_type="application/pdf"
-            )
         else:
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                imagem = Image.open(arquivo_upload)
-                st.image(imagem, caption="Documento Carregado", use_container_width=True)
-                documento_ia = imagem
+                imagem_carregada = Image.open(arquivo_upload)
+                st.image(imagem_carregada, caption="Documento Carregado", use_container_width=True)
 
     if arquivo_upload and api_key:
         if st.button("✨ Ler com Inteligência Artificial", use_container_width=True, type="primary"):
-            with st.spinner("A analisar o documento (pode demorar uns segundos)..."):
+            with st.spinner("Extraindo texto do arquivo (isso não gasta cota da IA)..."):
                 try:
-                    client = genai.Client(api_key=api_key)
-                    prompt = """
-                    Analise este documento médico e extraia as informações estritamente em formato JSON:
-                    {
-                        "data": "AAAA-MM-DD",
-                        "medico": "Nome do Médico / Clínica",
-                        "tipo_documento": "Receita, Exame, Atestado, Fatura ou Consulta",
-                        "resumo": "Resumo detalhado dos medicamentos, resultados de exames ou recomendações",
-                        "parametros": {"nome_do_parametro": valor_numerico}
-                    }
-                    Retorne APENAS o JSON válido.
-                    """
-                    response = client.models.generate_content(
-                        model="gemini-3.8-flash",
-                        contents=[documento_ia, prompt],
-                        config=types.GenerateContentConfig(response_mime_type="application/json")
-                    )
-                    
-                    st.session_state.dados_ia = json.loads(response.text)
-                    st.toast("✅ Leitura concluída com sucesso!", icon="🤖")
+                    # 1. Extração Local
+                    if arquivo_upload.type == "application/pdf":
+                        texto_extraido = extrair_texto_pdf(arquivo_upload)
+                    else:
+                        texto_extraido = extrair_texto_imagem(imagem_carregada)
+
+                    if not texto_extraido.strip():
+                        st.warning("Não foi possível extrair nenhum texto legível desse arquivo.")
+                    else:
+                        # 2. Envia APENAS o texto para o Gemini organizar
+                        st.toast("Texto extraído! Analisando com o Gemini...", icon="🧠")
+                        client = genai.Client(api_key=api_key)
+                        
+                        prompt = f"""
+                        Você é um assistente veterinário. Leia o seguinte texto extraído (via OCR) de um documento médico:
+                        
+                        TEXTO EXTRAÍDO:
+                        {texto_extraido}
+                        
+                        Extraia as informações estruturadas estritamente no seguinte formato JSON:
+                        {{
+                            "data": "AAAA-MM-DD",
+                            "medico": "Nome do Médico ou Clínica",
+                            "tipo_documento": "Receita, Exame, Atestado, Fatura ou Consulta",
+                            "resumo": "Resumo detalhado dos medicamentos, resultados ou recomendações",
+                            "parametros": {{"nome_do_parametro": valor_numerico}}
+                        }}
+                        Retorne APENAS o JSON válido, sem formatações adicionais.
+                        """
+                        
+                        # Usando gemini-1.5-flash (mais estável, rápido e aceita muito bem textos)
+                        response = client.models.generate_content(
+                            model="gemini-1.5-flash",
+                            contents=prompt,
+                            config=types.GenerateContentConfig(response_mime_type="application/json")
+                        )
+                        
+                        st.session_state.dados_ia = json.loads(response.text)
+                        st.toast("✅ Leitura estruturada concluída!", icon="🤖")
+                        
                 except Exception as e:
-                    st.error(f"Erro na leitura: {e}")
+                    st.error(f"Erro no processamento da IA: {e}")
 
     if st.session_state.dados_ia:
         st.markdown("<br>", unsafe_allow_html=True)
@@ -610,7 +635,7 @@ with tab5:
                             """
                             
                             response = client.models.generate_content(
-                                model="gemini-3.8-flash",
+                                model="gemini-1.5-flash",
                                 contents=prompt_resumo
                             )
                             
@@ -630,9 +655,6 @@ with tab5:
             
         st.markdown("---")
 
-        # ==========================================
-        # NOVO: EXPORTAR RELATÓRIO PARA O VETERINÁRIO
-        # ==========================================
         st.markdown("### 📄 Exportar Relatório para o Veterinário")
         st.write("Selecione o período e o conteúdo para gerar um documento pronto para enviar ao médico.")
 
@@ -651,7 +673,6 @@ with tab5:
                 horizontal=True
             )
 
-            # Filtra os dados conforme as opções escolhidas
             df_pet = df_todas[df_todas["paciente"] == nome_perfil].copy()
             df_pet['data_dt'] = pd.to_datetime(df_pet['data'], errors='coerce').dt.date
 
