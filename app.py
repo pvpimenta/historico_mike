@@ -34,6 +34,10 @@ supabase: Client = create_client(supabase_url, supabase_key)
 # ==========================================
 # PROVEDORES DE IA E SISTEMA DE FALLBACK
 # ==========================================
+# ==========================================
+# PROVEDORES DE IA E SISTEMA DE FALLBACK
+# ==========================================
+
 def _chamar_gemini(prompt, json_mode=False):
     api_key = st.secrets.get("GEMINI_API_KEY")
     if not api_key:
@@ -48,6 +52,34 @@ def _chamar_gemini(prompt, json_mode=False):
         config=config
     )
     return response.text
+
+
+def _chamar_deepseek(prompt, json_mode=False):
+    api_key = st.secrets.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise ValueError("Chave DEEPSEEK_API_KEY não encontrada nos Secrets.")
+        
+    client = OpenAI(
+        base_url="https://api.deepseek.com",
+        api_key=api_key
+    )
+    
+    kwargs = {}
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    # Garantir que a instrução contenha a palavra "json" se json_mode for True (exigência do DeepSeek)
+    if json_mode and "json" not in prompt.lower():
+        prompt += "\nResponda estritamente no formato JSON."
+
+    response = client.chat.completions.create(
+        model="deepseek-chat",  # Modelo DeepSeek-V3
+        messages=[{"role": "user", "content": prompt}],
+        timeout=30,  # Evita travamentos infinitos em falhas de rede
+        **kwargs
+    )
+    return response.choices[0].message.content
+
 
 def _chamar_github_models(prompt, json_mode=False):
     api_key = st.secrets.get("GITHUB_TOKEN")
@@ -66,17 +98,22 @@ def _chamar_github_models(prompt, json_mode=False):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
+        timeout=30,
         **kwargs
     )
     return response.choices[0].message.content
 
+
 def executar_ia_com_fallback(prompt, json_mode=False):
     """
-    Tenta chamar o Gemini 3.8 Flash em primeiro lugar. 
-    Em caso de falha, aciona automaticamente o GitHub Models (GPT-4o-mini).
+    Ordem de execução:
+    1. Gemini (Google)
+    2. DeepSeek (DeepSeek-V3)
+    3. GitHub Models (GPT-4o-mini)
     """
     provedores = [
         ("Gemini (Google gemini-3.8-flash)", _chamar_gemini),
+        ("DeepSeek (DeepSeek-V3)", _chamar_deepseek),
         ("GitHub Models (GPT-4o-mini)", _chamar_github_models)
     ]
 
@@ -97,7 +134,7 @@ def executar_ia_com_fallback(prompt, json_mode=False):
         except Exception as e:
             msg_erro = f"{nome_provedor}: {str(e)}"
             erros.append(msg_erro)
-            st.toast(f"⚠️ {nome_provedor} indisponível, tentando reserva...", icon="⏳")
+            st.toast(f"⚠️ {nome_provedor} indisponível, tentando próximo...", icon="⏳")
 
     raise RuntimeError("Todos os provedores de IA falharam:\n" + "\n".join(erros))
 
