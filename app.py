@@ -3,6 +3,7 @@ import pandas as pd
 from PIL import Image
 from google import genai
 from google.genai import types
+from openai import OpenAI
 import time
 import json
 import datetime
@@ -12,7 +13,7 @@ from io import BytesIO
 from supabase import create_client, Client
 import re
 
-# Novas bibliotecas de extração local
+# Bibliotecas de extração local
 import pdfplumber
 import pytesseract
 
@@ -29,6 +30,76 @@ except ImportError:
 supabase_url = st.secrets["SUPABASE_URL"]
 supabase_key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(supabase_url, supabase_key)
+
+# ==========================================
+# PROVEDORES DE IA E SISTEMA DE FALLBACK
+# ==========================================
+def _chamar_gemini(prompt, json_mode=False):
+    api_key = st.secrets.get("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("Chave GEMINI_API_KEY não encontrada nos Secrets.")
+    
+    client = genai.Client(api_key=api_key)
+    config = types.GenerateContentConfig(response_mime_type="application/json") if json_mode else None
+    
+    response = client.models.generate_content(
+        model="gemini-3.8-flash",
+        contents=prompt,
+        config=config
+    )
+    return response.text
+
+def _chamar_github_models(prompt, json_mode=False):
+    api_key = st.secrets.get("GITHUB_TOKEN")
+    if not api_key:
+        raise ValueError("Chave GITHUB_TOKEN não encontrada nos Secrets.")
+        
+    client = OpenAI(
+        base_url="https://models.inference.ai.azure.com",
+        api_key=api_key
+    )
+    
+    kwargs = {}
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        **kwargs
+    )
+    return response.choices[0].message.content
+
+def executar_ia_com_fallback(prompt, json_mode=False):
+    """
+    Tenta chamar o Gemini 3.8 Flash em primeiro lugar. 
+    Em caso de falha, aciona automaticamente o GitHub Models (GPT-4o-mini).
+    """
+    provedores = [
+        ("Gemini (Google gemini-3.8-flash)", _chamar_gemini),
+        ("GitHub Models (GPT-4o-mini)", _chamar_github_models)
+    ]
+
+    erros = []
+
+    for nome_provedor, funcao_provedor in provedores:
+        try:
+            st.toast(f"Analisando com {nome_provedor}...", icon="🔄")
+            texto_resposta = funcao_provedor(prompt, json_mode=json_mode)
+            
+            if json_mode:
+                resultado = json.loads(texto_resposta)
+            else:
+                resultado = texto_resposta
+                
+            st.toast(f"✅ Sucesso via {nome_provedor}!", icon="🎉")
+            return resultado
+        except Exception as e:
+            msg_erro = f"{nome_provedor}: {str(e)}"
+            erros.append(msg_erro)
+            st.toast(f"⚠️ {nome_provedor} indisponível, tentando reserva...", icon="⏳")
+
+    raise RuntimeError("Todos os provedores de IA falharam:\n" + "\n".join(erros))
 
 # ==========================================
 # FUNÇÕES DE EXTRAÇÃO LOCAL DE TEXTO (SEM IA)
@@ -48,7 +119,6 @@ def extrair_texto_pdf(arquivo_pdf):
 
 def extrair_texto_imagem(imagem):
     try:
-        # Usa o idioma 'por' (português) para reconhecer acentos
         texto = pytesseract.image_to_string(imagem, lang='por')
         return texto
     except Exception as e:
@@ -105,7 +175,7 @@ def gerar_backup_json():
 def construir_texto_relatorio(paciente, data_inicio, data_fim, incluir_resumo, incluir_detalhes, resumo_ia, df_periodo):
     linhas = []
     linhas.append("==================================================")
-    linhas.append(f"      RELATÓRIO CLÍNICO VETERINÁRIO - {paciente.upper()}")
+    linhas.append(f"       RELATÓRIO CLÍNICO VETERINÁRIO - {paciente.upper()}")
     linhas.append("==================================================")
     linhas.append(f"Período: {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}")
     linhas.append(f"Data de Emissão: {datetime.date.today().strftime('%d/%m/%Y')}")
@@ -188,7 +258,7 @@ def gerar_pdf_bytes(texto_relatorio):
     return bytes(pdf.output())
 
 # ==========================================
-# FUNÇÕES DO BANCO DE DADOS (PERFIL/FOTO)
+# FUNÇÕES DO PERFIL (FOTO E DATA NASCIMENTO)
 # ==========================================
 def image_to_base64(image):
     buffered = BytesIO()
@@ -196,28 +266,57 @@ def image_to_base64(image):
     image.save(buffered, format="JPEG")
     return base64.b64encode(buffered.getvalue()).decode()
 
-def salvar_foto_perfil(nome_pet, imagem):
-    img_base64 = image_to_base64(imagem)
-    dados = {"nome_pet": nome_pet, "foto_base64": img_base64}
+def calcular_idade(data_nascimento):
+    """Calcula a idade em anos e meses com base na data de nascimento."""
+    if not data_nascimento:
+        return ""
+    hoje = datetime.date.today()
+    anos = hoje.year - data_nascimento.year
+    meses = hoje.month - data_nascimento.month
+    dias = hoje.day - data_nascimento.day
+    
+    if dias < 0:
+        meses -= 1
+    if meses < 0:
+        anos -= 1
+        meses += 12
+        
+    partes = []
+    if anos > 0:
+        partes.append(f"{anos} {'ano' if anos == 1 else 'anos'}")
+    if meses > 0:
+        partes.append(f"{meses} {'mês' if meses == 1 else 'meses'}")
+    if not partes:
+        partes.append("Menos de 1 mês")
+        
+    return " e ".join(partes)
+
+def salvar_perfil(nome_pet, foto_base64=None, data_nascimento=None):
+    dados = {"nome_pet": nome_pet}
+    if foto_base64 is not None:
+        dados["foto_base64"] = foto_base64
+    if data_nascimento is not None:
+        dados["data_nascimento"] = str(data_nascimento)
+        
     try:
         res = supabase.table("perfil").select("*").eq("nome_pet", nome_pet).execute()
         if res.data:
-            supabase.table("perfil").update({"foto_base64": img_base64}).eq("nome_pet", nome_pet).execute()
+            supabase.table("perfil").update(dados).eq("nome_pet", nome_pet).execute()
         else:
             supabase.table("perfil").insert(dados).execute()
         return True
     except Exception as e:
-        st.sidebar.error(f"Erro ao salvar foto: {e}")
+        st.sidebar.error(f"Erro ao salvar perfil: {e}")
         return False
 
-def carregar_foto_perfil(nome_pet):
+def carregar_perfil(nome_pet):
     try:
-        res = supabase.table("perfil").select("foto_base64").eq("nome_pet", nome_pet).execute()
+        res = supabase.table("perfil").select("*").eq("nome_pet", nome_pet).execute()
         if res.data:
-            return res.data[0]["foto_base64"]
+            return res.data[0]
     except Exception:
         pass
-    return None
+    return {}
 
 # ==========================================
 # INICIALIZAÇÃO DE ESTADO E PÁGINA
@@ -237,7 +336,19 @@ with st.sidebar:
     st.title("🐾 Perfil do Pet")
     nome_perfil = st.text_input("Nome do Paciente", value="Mike", key="nome_perfil")
     st.markdown("---")
-    foto_b64 = carregar_foto_perfil(nome_perfil)
+    
+    perfil_dados = carregar_perfil(nome_perfil)
+    foto_b64 = perfil_dados.get("foto_base64")
+    data_nasc_str = perfil_dados.get("data_nascimento")
+    
+    if data_nasc_str:
+        try:
+            data_nasc_val = datetime.datetime.strptime(data_nasc_str, "%Y-%m-%d").date()
+        except ValueError:
+            data_nasc_val = datetime.date.today()
+    else:
+        data_nasc_val = datetime.date.today()
+
     if foto_b64:
         st.markdown(
             f'<div style="display: flex; justify-content: center;">'
@@ -247,15 +358,26 @@ with st.sidebar:
         )
     else:
         st.info("Nenhuma foto de perfil cadastrada. Envie uma abaixo!")
-        
+
+    # Campo de Data de Nascimento e Contador de Idade
+    data_nasc_input = st.date_input("🎂 Data de Nascimento", value=data_nasc_val, key="data_nasc_input")
+    
+    if data_nasc_input and data_nasc_input <= datetime.date.today():
+        idade_formatada = calcular_idade(data_nasc_input)
+        st.info(f"🎈 **Idade Atual:** {idade_formatada}")
+
     nova_foto = st.file_uploader("Alterar foto de perfil", type=["jpg", "jpeg", "png"])
-    if nova_foto:
-        if st.button("💾 Salvar Nova Foto", use_container_width=True):
+    
+    if st.button("💾 Salvar Perfil", use_container_width=True):
+        img_b64 = foto_b64
+        if nova_foto:
             img = Image.open(nova_foto)
             img.thumbnail((400, 400))
-            if salvar_foto_perfil(nome_perfil, img):
-                st.success("Foto atualizada!")
-                st.rerun()
+            img_b64 = image_to_base64(img)
+            
+        if salvar_perfil(nome_perfil, img_b64, data_nasc_input):
+            st.success("Perfil e data de nascimento salvos!")
+            st.rerun()
 
 # ==========================================
 # CONTEÚDO PRINCIPAL
@@ -265,11 +387,12 @@ with col_titulo:
     st.title(f"🐶 Relatório do {nome_perfil}")
     st.markdown("*O diário inteligente de saúde do seu pet.*")
 
-if "GEMINI_API_KEY" in st.secrets:
-    api_key = st.secrets["GEMINI_API_KEY"]
-else:
-    api_key = ""
-    st.error("⚠️ Falta a chave GEMINI_API_KEY nos Secrets.")
+# Verifica disponibilidade das chaves
+tem_gemini = "GEMINI_API_KEY" in st.secrets
+tem_github = "GITHUB_TOKEN" in st.secrets
+
+if not (tem_gemini or tem_github):
+    st.error("⚠️ Nenhuma chave de IA (GEMINI_API_KEY ou GITHUB_TOKEN) foi encontrada nos Secrets.")
 
 st.markdown("---")
 
@@ -290,7 +413,6 @@ with tab1:
     
     arquivo_upload = st.file_uploader("Arraste a foto ou ficheiro PDF do exame", type=["jpg", "jpeg", "png", "pdf"])
     
-    # Variáveis para guardar o texto extraído e a imagem
     texto_extraido = ""
     imagem_carregada = None
     
@@ -303,9 +425,9 @@ with tab1:
                 imagem_carregada = Image.open(arquivo_upload)
                 st.image(imagem_carregada, caption="Documento Carregado", use_container_width=True)
 
-    if arquivo_upload and api_key:
+    if arquivo_upload and (tem_gemini or tem_github):
         if st.button("✨ Ler com Inteligência Artificial", use_container_width=True, type="primary"):
-            with st.spinner("Extraindo texto do arquivo (isso não gasta cota da IA)..."):
+            with st.spinner("Extraindo texto e analisando com a IA..."):
                 try:
                     # 1. Extração Local
                     if arquivo_upload.type == "application/pdf":
@@ -316,10 +438,7 @@ with tab1:
                     if not texto_extraido.strip():
                         st.warning("Não foi possível extrair nenhum texto legível desse arquivo.")
                     else:
-                        # 2. Envia APENAS o texto para o Gemini organizar
-                        st.toast("Texto extraído! Analisando com o Gemini...", icon="🧠")
-                        client = genai.Client(api_key=api_key)
-                        
+                        # 2. Envia APENAS o texto com Fallback Automático
                         prompt = f"""
                         Você é um assistente veterinário. Leia o seguinte texto extraído (via OCR) de um documento médico:
                         
@@ -337,14 +456,7 @@ with tab1:
                         Retorne APENAS o JSON válido, sem formatações adicionais.
                         """
                         
-                        # Usando gemini-3.8-flash (mais estável, rápido e aceita muito bem textos)
-                        response = client.models.generate_content(
-                            model="gemini-3.8-flash",
-                            contents=prompt,
-                            config=types.GenerateContentConfig(response_mime_type="application/json")
-                        )
-                        
-                        st.session_state.dados_ia = json.loads(response.text)
+                        st.session_state.dados_ia = executar_ia_com_fallback(prompt, json_mode=True)
                         st.toast("✅ Leitura estruturada concluída!", icon="🤖")
                         
                 except Exception as e:
@@ -398,13 +510,16 @@ with tab2:
     if not df.empty:
         pacientes = list(df["paciente"].unique())
         
-        col_filtro1, col_filtro2 = st.columns(2)
+        col_filtro1, col_filtro2, col_filtro3 = st.columns([2, 2, 1.5])
         with col_filtro1:
             paciente_sel = st.selectbox("🐶 Selecione o Pet/Paciente:", pacientes)
         with col_filtro2:
             busca = st.text_input("🔍 Procurar:")
+        with col_filtro3:
+            ordem_ordem = st.selectbox("⏳ Ordem:", ["Cronológica (Mais antigo)", "Recentes Primeiro"])
             
-        df_filtrado = df[df["paciente"] == paciente_sel].sort_values(by="data", ascending=False)
+        ordem_asc = (ordem_ordem == "Cronológica (Mais antigo)")
+        df_filtrado = df[df["paciente"] == paciente_sel].sort_values(by="data", ascending=ordem_asc)
         
         if busca:
             df_filtrado = df_filtrado[
@@ -614,14 +729,13 @@ with tab5:
             st.write("Gere uma síntese inteligente de todas as consultas acumuladas até ao momento.")
             
             if st.button("✨ Gerar/Atualizar Resumo do Histórico", type="primary", use_container_width=True):
-                if api_key:
+                if tem_gemini or tem_github:
                     with st.spinner("A analisar todo o histórico de consultas com a IA..."):
                         try:
                             texto_historico = ""
                             for _, r in df_consultas.iterrows():
                                 texto_historico += f"- Data: {r['data']} | Vet/Clínica: {r['medico']}\n  Relato: {r['resumo']}\n\n"
                             
-                            client = genai.Client(api_key=api_key)
                             prompt_resumo = f"""
                             Você é um assistente veterinário experiente. Analise o histórico cronológico de todas as consultas médicas do pet {nome_perfil} abaixo:
 
@@ -634,17 +748,12 @@ with tab5:
                             4. 💡 **Recomendações e Pontos de Atenção:** (Cuidados contínuos recomendados pelos médicos)
                             """
                             
-                            response = client.models.generate_content(
-                                model="gemini-3.8-flash",
-                                contents=prompt_resumo
-                            )
-                            
-                            st.session_state.resumo_consultas = response.text
+                            st.session_state.resumo_consultas = executar_ia_com_fallback(prompt_resumo, json_mode=False)
                             st.toast("Resumo clínico atualizado!", icon="🩺")
                         except Exception as e:
                             st.error(f"Erro ao gerar resumo: {e}")
                 else:
-                    st.error("Chave GEMINI_API_KEY não configurada.")
+                    st.error("Nenhuma chave de IA configurada nos Secrets.")
 
             if st.session_state.resumo_consultas:
                 st.markdown("<br>", unsafe_allow_html=True)
@@ -718,4 +827,4 @@ with tab5:
                 else:
                     st.info("Para ativar o download em PDF, adicione `fpdf2` ao arquivo `requirements.txt`.")
     else:
-        st.info("Nenhum dado encontrado no banco de dados.")
+        st.info("Nenum dado encontrado no banco de dados.")
