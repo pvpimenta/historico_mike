@@ -337,9 +337,9 @@ with tab1:
                         Retorne APENAS o JSON válido, sem formatações adicionais.
                         """
                         
-                        # Usando gemini-1.5-flash (mais estável, rápido e aceita muito bem textos)
+                        # Usando gemini-3.8-flash (mais estável, rápido e aceita muito bem textos)
                         response = client.models.generate_content(
-                            model="gemini-1.5-flash",
+                            model="gemini-3.8-flash",
                             contents=prompt,
                             config=types.GenerateContentConfig(response_mime_type="application/json")
                         )
