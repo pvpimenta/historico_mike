@@ -1,8 +1,8 @@
 streamlit
 pandas
-pillow
+Pillow
 google-genai
 supabase
 fpdf2
-google-generativeai
+pdfplumber
 pytesseract
