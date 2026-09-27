@@ -47,58 +47,34 @@ def _chamar_gemini(prompt, json_mode=False):
     config = types.GenerateContentConfig(response_mime_type="application/json") if json_mode else None
     
     response = client.models.generate_content(
-        model="gemini-3.8-flash",
+        model="gemini-1.5-flash",  # Modelo estável e gratuito do Google
         contents=prompt,
         config=config
     )
     return response.text
 
 
-def _chamar_deepseek(prompt, json_mode=False):
-    api_key = st.secrets.get("DEEPSEEK_API_KEY")
+def _chamar_groq(prompt, json_mode=False):
+    api_key = st.secrets.get("GROQ_API_KEY")
     if not api_key:
-        raise ValueError("Chave DEEPSEEK_API_KEY não encontrada nos Secrets.")
+        raise ValueError("Chave GROQ_API_KEY não encontrada nos Secrets.")
         
     client = OpenAI(
-        base_url="https://api.deepseek.com",
+        base_url="https://api.groq.com/openai/v1",
         api_key=api_key
     )
     
     kwargs = {}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
-
-    # Garantir que a instrução contenha a palavra "json" se json_mode for True (exigência do DeepSeek)
-    if json_mode and "json" not in prompt.lower():
-        prompt += "\nResponda estritamente no formato JSON."
-
-    response = client.chat.completions.create(
-        model="deepseek-chat",  # Modelo DeepSeek-V3
-        messages=[{"role": "user", "content": prompt}],
-        timeout=30,  # Evita travamentos infinitos em falhas de rede
-        **kwargs
-    )
-    return response.choices[0].message.content
-
-
-def _chamar_github_models(prompt, json_mode=False):
-    api_key = st.secrets.get("GITHUB_TOKEN")
-    if not api_key:
-        raise ValueError("Chave GITHUB_TOKEN não encontrada nos Secrets.")
-        
-    client = OpenAI(
-        base_url="https://models.inference.ai.azure.com",
-        api_key=api_key
-    )
-    
-    kwargs = {}
-    if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
+        # O modelo Llama exige a palavra 'json' na instrução quando ativa o json_object
+        if "json" not in prompt.lower():
+            prompt += "\nResponda estritamente no formato JSON."
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="llama-3.3-70b-versatile",  # Modelo gratuito e ultra-rápido no Groq
         messages=[{"role": "user", "content": prompt}],
-        timeout=30,
+        timeout=30,  # Evita travamentos por falha de rede
         **kwargs
     )
     return response.choices[0].message.content
@@ -107,14 +83,12 @@ def _chamar_github_models(prompt, json_mode=False):
 def executar_ia_com_fallback(prompt, json_mode=False):
     """
     Ordem de execução:
-    1. Gemini (Google)
-    2. DeepSeek (DeepSeek-V3)
-    3. GitHub Models (GPT-4o-mini)
+    1. Gemini (Google - gemini-3.8-flash)
+    2. Groq (Llama 3.3 70B - Reserva Gratuita)
     """
     provedores = [
         ("Gemini (Google gemini-3.8-flash)", _chamar_gemini),
-        ("DeepSeek (DeepSeek-V3)", _chamar_deepseek),
-        ("GitHub Models (GPT-4o-mini)", _chamar_github_models)
+        ("Groq (Llama 3.3 70B)", _chamar_groq)
     ]
 
     erros = []
