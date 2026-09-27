@@ -3,6 +3,8 @@ import pandas as pd
 from PIL import Image
 from google import genai
 from google.genai import types
+import google.generativeai as genai_old
+import time
 import json
 import datetime
 import urllib.parse
@@ -109,8 +111,6 @@ def construir_texto_relatorio(paciente, data_inicio, data_fim, incluir_resumo, i
 
     return "\n".join(linhas)
 
-import re
-
 # ==========================================
 # FUNÇÃO PARA REMOVER EMOJIS E LIMPAR TEXTO DO PDF
 # ==========================================
@@ -151,42 +151,28 @@ def gerar_pdf_bytes(texto_relatorio):
         # Formatação de Títulos
         if "RELATORIO CLINICO" in linha_str or "RELATÓRIO CLÍNICO" in linha_str:
             pdf.set_font("Helvetica", style="B", size=12)
-            pdf.cell(pdf.epw, 7, linha_str, align="C", new_x="LMARGIN", new_y="NEXT")
+            # Para fpdf2, cell mudou, mas tentaremos manter retrocompatibilidade com fpdf antigo ou fpdf2
+            try:
+                pdf.cell(pdf.epw, 7, linha_str, align="C", new_x="LMARGIN", new_y="NEXT")
+            except Exception:
+                pdf.cell(0, 7, linha_str, ln=True, align="C")
             pdf.set_font("Helvetica", size=10)
         elif "RESUMO CLINICO" in linha_str or "HISTORICO DE REGISTROS" in linha_str:
             pdf.ln(2)
             pdf.set_font("Helvetica", style="B", size=10)
-            pdf.multi_cell(pdf.epw, 5, linha_str)
+            try:
+                pdf.multi_cell(pdf.epw, 5, linha_str)
+            except Exception:
+                pdf.multi_cell(0, 5, linha_str)
             pdf.set_font("Helvetica", size=10)
         elif linha_str.startswith("===") or linha_str.startswith("---"):
             pdf.ln(1)
         else:
-            # Usa pdf.epw para preencher a largura útil da página corretamente
-            pdf.multi_cell(pdf.epw, 5, linha_str)
-            
-    return bytes(pdf.output())
-    
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Helvetica", size=10)
-    
-    # Trata caracteres especiais para codificação Latin-1 padrão do FPDF
-    texto_limpo = texto_relatorio.encode('latin-1', 'replace').decode('latin-1')
-    
-    for linha in texto_limpo.split('\n'):
-        if "RELATÓRIO CLÍNICO" in linha:
-            pdf.set_font("Helvetica", style="B", size=13)
-            pdf.cell(0, 8, linha, ln=True, align="C")
-            pdf.set_font("Helvetica", size=10)
-        elif linha.startswith("📌") or linha.startswith("📋"):
-            pdf.ln(2)
-            pdf.set_font("Helvetica", style="B", size=11)
-            pdf.multi_cell(0, 6, linha)
-            pdf.set_font("Helvetica", size=10)
-        elif linha.startswith("===") or linha.startswith("---"):
-            pdf.ln(1)
-        else:
-            pdf.multi_cell(0, 5, linha)
+            # Usa pdf.epw ou 0 dependendo da versão do FPDF
+            try:
+                pdf.multi_cell(pdf.epw, 5, linha_str)
+            except Exception:
+                pdf.multi_cell(0, 5, linha_str)
             
     return bytes(pdf.output())
 
@@ -231,7 +217,7 @@ if "dados_ia" not in st.session_state:
 if "resumo_consultas" not in st.session_state:
     st.session_state.resumo_consultas = None
 
-st.set_page_config(page_title="Relatório do Mike", page_icon="🐕", layout="centered")
+st.set_page_config(page_title="Relatório do Pet", page_icon="🐕", layout="centered")
 
 # ==========================================
 # BARRA LATERAL (PERFIL)
