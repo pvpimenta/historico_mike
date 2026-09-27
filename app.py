@@ -58,24 +58,30 @@ def _chamar_groq(prompt, json_mode=False):
     api_key = st.secrets.get("GROQ_API_KEY")
     if not api_key:
         raise ValueError("Chave GROQ_API_KEY não encontrada nos Secrets.")
-        
+
+    # Modelo atual recomendado pela Groq.
+    # Também pode ser definido nos Secrets:
+    # GROQ_MODEL = "openai/gpt-oss-120b"
+    groq_model = st.secrets.get("GROQ_MODEL", "openai/gpt-oss-120b")
+
     client = OpenAI(
         base_url="https://api.groq.com/openai/v1",
         api_key=api_key
     )
-    
+
     kwargs = {}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
         if "json" not in prompt.lower():
-            prompt += "\nResponda estritamente no formato JSON."
+            prompt += "\\nResponda estritamente no formato JSON."
 
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",  # Atualizado para o modelo suportado
+        model=groq_model,
         messages=[{"role": "user", "content": prompt}],
         timeout=30,
         **kwargs
     )
+
     return response.choices[0].message.content
 
 
@@ -83,11 +89,11 @@ def executar_ia_com_fallback(prompt, json_mode=False):
     """
     Ordem de execução:
     1. Gemini (Google - gemini-3.8-flash)
-    2. Groq (Llama 3.3 70B - Reserva Gratuita)
+    2. Groq (OpenAI GPT-OSS 120B - Fallback)
     """
     provedores = [
         ("Gemini (Google gemini-3.8-flash)", _chamar_gemini),
-        ("Groq (llama-3.3-70b-versatile)", _chamar_groq)
+        ("Groq (openai/gpt-oss-120b)", _chamar_groq)
     ]
 
     erros = []
@@ -399,10 +405,10 @@ with col_titulo:
 
 # Verifica disponibilidade das chaves
 tem_gemini = "GEMINI_API_KEY" in st.secrets
-tem_github = "GITHUB_TOKEN" in st.secrets
+tem_groq = "GROQ_API_KEY" in st.secrets
 
-if not (tem_gemini or tem_github):
-    st.error("⚠️ Nenhuma chave de IA (GEMINI_API_KEY ou GITHUB_TOKEN) foi encontrada nos Secrets.")
+if not (tem_gemini or tem_groq):
+    st.error("⚠️ Nenhuma chave de IA (GEMINI_API_KEY ou GROQ_API_KEY) foi encontrada nos Secrets.")
 
 st.markdown("---")
 
@@ -435,7 +441,7 @@ with tab1:
                 imagem_carregada = Image.open(arquivo_upload)
                 st.image(imagem_carregada, caption="Documento Carregado", use_container_width=True)
 
-    if arquivo_upload and (tem_gemini or tem_github):
+    if arquivo_upload and (tem_gemini or tem_groq):
         if st.button("✨ Ler com Inteligência Artificial", use_container_width=True, type="primary"):
             with st.spinner("Extraindo texto e analisando com a IA..."):
                 try:
@@ -739,7 +745,7 @@ with tab5:
             st.write("Gere uma síntese inteligente de todas as consultas acumuladas até ao momento.")
             
             if st.button("✨ Gerar/Atualizar Resumo do Histórico", type="primary", use_container_width=True):
-                if tem_gemini or tem_github:
+                if tem_gemini or tem_groq:
                     with st.spinner("A analisar todo o histórico de consultas com a IA..."):
                         try:
                             texto_historico = ""
