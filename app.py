@@ -71,7 +71,7 @@ def _chamar_groq(prompt, json_mode=False):
             prompt += "\nResponda estritamente no formato JSON."
 
     response = client.chat.completions.create(
-        model="llama-3.1-70b-versatile",  # Modelo ativo no Groq
+        model="llama-3.3-70b-versatile",  # Atualizado para o modelo suportado
         messages=[{"role": "user", "content": prompt}],
         timeout=30,
         **kwargs
