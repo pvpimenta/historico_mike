@@ -67,14 +67,13 @@ def _chamar_groq(prompt, json_mode=False):
     kwargs = {}
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
-        # O modelo Llama exige a palavra 'json' na instrução quando ativa o json_object
         if "json" not in prompt.lower():
             prompt += "\nResponda estritamente no formato JSON."
 
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",  # Modelo gratuito e ultra-rápido no Groq
+        model="llama-3.1-70b-versatile",  # Modelo ativo no Groq
         messages=[{"role": "user", "content": prompt}],
-        timeout=30,  # Evita travamentos por falha de rede
+        timeout=30,
         **kwargs
     )
     return response.choices[0].message.content
