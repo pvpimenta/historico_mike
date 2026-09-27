@@ -3,3 +3,4 @@ pandas
 pillow
 google-genai
 supabase
+fpdf2
