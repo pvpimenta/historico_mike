@@ -2,6 +2,8 @@ streamlit
 pandas
 Pillow
 google-genai
+groq
+openai
 supabase
 fpdf2
 pdfplumber
