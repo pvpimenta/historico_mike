@@ -31,8 +31,10 @@ def salvar_registro(paciente, data, medico, tipo_documento, resumo, parametros):
             "parametros": parametros
         }
         supabase.table("historico").insert(dados).execute()
+        return True
     except Exception as e:
         st.error(f"Erro ao salvar no Supabase: {e}")
+        return False
 
 def carregar_historico():
     try:
@@ -48,8 +50,16 @@ def carregar_historico():
 def excluir_registro(id_registro):
     try:
         supabase.table("historico").delete().eq("id", id_registro).execute()
+        return True
     except Exception as e:
         st.error(f"Erro ao excluir do Supabase: {e}")
+        return False
+
+def gerar_backup_json():
+    df = carregar_historico()
+    if not df.empty:
+        return df.to_json(orient="records", indent=2, force_ascii=False)
+    return None
 
 # ==========================================
 # FUNÇÕES DO BANCO DE DADOS (PERFIL/FOTO)
@@ -89,6 +99,9 @@ def carregar_foto_perfil(nome_pet):
 if "dados_ia" not in st.session_state:
     st.session_state.dados_ia = None
 
+if "resumo_consultas" not in st.session_state:
+    st.session_state.resumo_consultas = None
+
 st.set_page_config(page_title="Relatório do Mike", page_icon="🐕", layout="centered")
 
 # ==========================================
@@ -127,8 +140,8 @@ with st.sidebar:
 # ==========================================
 col_titulo, col_logo = st.columns([4, 1])
 with col_titulo:
-    st.title("🐶 Relatório do Mike")
-    st.markdown("*O diário inteligente do Kim Dim.*")
+    st.title(f"🐶 Relatório do {nome_perfil}")
+    st.markdown("*O diário inteligente de saúde do seu pet.*")
 
 if "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
@@ -138,7 +151,13 @@ else:
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4 = st.tabs(["📝 Adicionar Registo", "🗂️ Histórico", "⏰ Lembretes", "📊 Dashboard"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "📝 Adicionar Registo", 
+    "🗂️ Histórico", 
+    "⏰ Lembretes", 
+    "📊 Dashboard", 
+    "🩺 Consultas"
+])
 
 # ------------------------------------------
 # SEPARADOR 1: NOVO REGISTO
@@ -226,10 +245,10 @@ with tab1:
                     except Exception:
                         parametros_finais = {}
                         
-                    salvar_registro(nome_paciente, str(data_final), medico_final, tipo_final, resumo_final, parametros_finais)
-                    st.session_state.dados_ia = None
-                    st.toast("Registo guardado com sucesso!", icon="🎉")
-                    st.rerun()
+                    if salvar_registro(nome_paciente, str(data_final), medico_final, tipo_final, resumo_final, parametros_finais):
+                        st.session_state.dados_ia = None
+                        st.toast("Registo guardado com sucesso!", icon="🎉")
+                        st.rerun()
 
 # ------------------------------------------
 # SEPARADOR 2: HISTÓRICO
@@ -261,14 +280,24 @@ with tab2:
         col_met2.metric("Locais/Clínicas", df_filtrado['medico'].nunique())
         
         csv = df_filtrado.to_csv(index=False).encode('utf-8')
+        json_backup = gerar_backup_json()
+        
         with col_met3:
             st.download_button(
-                label="📥 Baixar Histórico",
+                label="📥 Baixar CSV",
                 data=csv,
                 file_name=f"historico_{paciente_sel}.csv",
                 mime="text/csv",
                 use_container_width=True
             )
+            if json_backup:
+                st.download_button(
+                    label="🛡️ Backup (JSON)",
+                    data=json_backup,
+                    file_name=f"backup_completo_{datetime.date.today()}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
             
         st.markdown("---")
 
@@ -277,18 +306,21 @@ with tab2:
         else:
             for idx, row in df_filtrado.iterrows():
                 with st.container(border=True):
-                    col_texto, col_botao = st.columns([5, 1])
+                    col_texto, col_botao = st.columns([5, 1.5])
                     with col_texto:
                         st.subheader(f"🗓️ {row['data']} - {row['tipo_documento']}")
                         st.markdown(f"**🏥 Clínica/Médico:** {row['medico']}")
                         st.markdown(f"**📝 Detalhes:** {row['resumo']}")
                     with col_botao:
                         st.write("") 
-                        st.write("")
-                        if st.button("🗑️", key=f"excluir_{row['id']}", help="Apagar este registo"):
-                            excluir_registro(row['id'])
-                            st.toast("Registo apagado!", icon="🗑️")
-                            st.rerun() 
+                        confirmar_del = st.checkbox("Confirmar", key=f"chk_{row['id']}")
+                        if st.button("🗑️ Apagar", key=f"excluir_{row['id']}", help="Marque a caixa ao lado para apagar"):
+                            if confirmar_del:
+                                if excluir_registro(row['id']):
+                                    st.toast("Registo apagado!", icon="🗑️")
+                                    st.rerun()
+                            else:
+                                st.warning("Marque 'Confirmar' para apagar.")
     else:
         st.info("O histórico está vazio. Adicione um novo registo!")
 
@@ -387,3 +419,106 @@ with tab4:
             st.info("Nenhum parâmetro numérico foi extraído nos registos deste paciente ainda.")
     else:
         st.info("O histórico está vazio ou a coluna 'parametros' não existe no banco de dados.")
+
+# ------------------------------------------
+# SEPARADOR 5: HISTÓRICO DE CONSULTAS (NOVO)
+# ------------------------------------------
+with tab5:
+    st.markdown("### 🩺 Histórico de Consultas Veterinárias")
+    st.write("Registe o que foi falado nas consultas e gere um resumo inteligente de toda a evolução médica.")
+    
+    # 1. Formulário para adicionar nova consulta
+    with st.container(border=True):
+        st.subheader("➕ Registar Nova Consulta")
+        with st.form("form_consulta"):
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                data_consulta = st.date_input("🗓️ Data da Consulta", value=datetime.date.today())
+            with col_c2:
+                medico_consulta = st.text_input("👨‍⚕️ Veterinário / Clínica", value="Dr. Veterinário")
+            
+            detalhes_consulta = st.text_area(
+                "📝 O que foi dito na consulta?", 
+                placeholder="Ex: O pet apresentou episódios de vómito. O veterinário receitou Plasil por 3 dias e pediu exame de sangue.",
+                height=120
+            )
+            
+            btn_salvar_consulta = st.form_submit_button("💾 Guardar Consulta", use_container_width=True)
+            
+            if btn_salvar_consulta:
+                if detalhes_consulta.strip():
+                    if salvar_registro(nome_perfil, str(data_consulta), medico_consulta, "Consulta", detalhes_consulta, {}):
+                        st.toast("Consulta registrada com sucesso!", icon="✅")
+                        st.rerun()
+                else:
+                    st.warning("Por favor, descreva o que foi dito na consulta.")
+
+    st.markdown("---")
+
+    # 2. Carregar e exibir consultas anteriores
+    df_todas = carregar_historico()
+    
+    if not df_todas.empty:
+        # Filtra consultas do paciente atual
+        df_consultas = df_todas[
+            (df_todas["paciente"] == nome_perfil) & 
+            (df_todas["tipo_documento"].str.contains("Consulta", case=False, na=False))
+        ].sort_values(by="data", ascending=True) # Ordena em ordem cronológica
+        
+        if not df_consultas.empty:
+            st.subheader(f"📋 Registo das Consultas ({len(df_consultas)})")
+            
+            # Mostra as consultas registradas
+            for idx, row in df_consultas.sort_values(by="data", ascending=False).iterrows():
+                with st.expander(f"🗓️ {row['data']} — {row['medico']}"):
+                    st.markdown(f"**Relato:** {row['resumo']}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # 3. Gerador de Resumo Clínico com IA (Gemini)
+            st.markdown("### 🤖 Resumo do Histórico Clínico")
+            st.write("Gere uma síntese inteligente de todas as consultas acumuladas até ao momento.")
+            
+            if st.button("✨ Gerar/Atualizar Resumo do Histórico", type="primary", use_container_width=True):
+                if api_key:
+                    with st.spinner("A analisar todo o histórico de consultas com a IA..."):
+                        try:
+                            # Prepara o texto com todo o histórico cronológico
+                            texto_historico = ""
+                            for _, r in df_consultas.iterrows():
+                                texto_historico += f"- Data: {r['data']} | Vet/Clínica: {r['medico']}\n  Relato: {r['resumo']}\n\n"
+                            
+                            client = genai.Client(api_key=api_key)
+                            prompt_resumo = f"""
+                            Você é um assistente veterinário experiente. Analise o histórico cronológico de todas as consultas médicas do pet {nome_perfil} abaixo:
+
+                            {texto_historico}
+
+                            Elabore um resumo clínico claro, estruturado e fácil de ler para o tutor. Organize a resposta nos seguintes tópicos em Markdown:
+                            1. 📌 **Visão Geral do Caso:** (Breve resumo da saúde geral do pet)
+                            2. ⏱️ **Evolução Cronológica dos Sintomas/Sinais:** (O que mudou ao longo do tempo)
+                            3. 💊 **Tratamentos e Medicamentos Citados:** (O que já foi prescrito/usado)
+                            4. 💡 **Recomendações e Pontos de Atenção:** (Cuidados contínuos recomendados pelos médicos)
+                            """
+                            
+                            response = client.models.generate_content(
+                                model="gemini-2.5-flash",
+                                contents=prompt_resumo
+                            )
+                            
+                            st.session_state.resumo_consultas = response.text
+                            st.toast("Resumo clínico atualizado!", icon="🩺")
+                        except Exception as e:
+                            st.error(f"Erro ao gerar resumo: {e}")
+                else:
+                    st.error("Chave GEMINI_API_KEY não configurada.")
+
+            # Exibe o resumo se ele existir no estado da sessão
+            if st.session_state.resumo_consultas:
+                st.markdown("<br>", unsafe_allow_html=True)
+                with st.container(border=True):
+                    st.markdown(st.session_state.resumo_consultas)
+        else:
+            st.info("Ainda não há nenhuma consulta cadastrada para este pet.")
+    else:
+        st.info("Nenhum dado encontrado no banco de dados.")
