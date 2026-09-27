@@ -4,3 +4,4 @@ pillow
 google-genai
 supabase
 fpdf2
+google-generativeai
