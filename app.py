@@ -201,7 +201,7 @@ with tab1:
                     Retorne APENAS o JSON válido.
                     """
                     response = client.models.generate_content(
-                        model="gemini-2.5-flash",
+                        model="gemini-3.8-flash",
                         contents=[documento_ia, prompt],
                         config=types.GenerateContentConfig(response_mime_type="application/json")
                     )
@@ -421,13 +421,12 @@ with tab4:
         st.info("O histórico está vazio ou a coluna 'parametros' não existe no banco de dados.")
 
 # ------------------------------------------
-# SEPARADOR 5: HISTÓRICO DE CONSULTAS (NOVO)
+# SEPARADOR 5: HISTÓRICO DE CONSULTAS
 # ------------------------------------------
 with tab5:
     st.markdown("### 🩺 Histórico de Consultas Veterinárias")
     st.write("Registe o que foi falado nas consultas e gere um resumo inteligente de toda a evolução médica.")
     
-    # 1. Formulário para adicionar nova consulta
     with st.container(border=True):
         st.subheader("➕ Registar Nova Consulta")
         with st.form("form_consulta"):
@@ -455,27 +454,23 @@ with tab5:
 
     st.markdown("---")
 
-    # 2. Carregar e exibir consultas anteriores
     df_todas = carregar_historico()
     
     if not df_todas.empty:
-        # Filtra consultas do paciente atual
         df_consultas = df_todas[
             (df_todas["paciente"] == nome_perfil) & 
             (df_todas["tipo_documento"].str.contains("Consulta", case=False, na=False))
-        ].sort_values(by="data", ascending=True) # Ordena em ordem cronológica
+        ].sort_values(by="data", ascending=True)
         
         if not df_consultas.empty:
             st.subheader(f"📋 Registo das Consultas ({len(df_consultas)})")
             
-            # Mostra as consultas registradas
             for idx, row in df_consultas.sort_values(by="data", ascending=False).iterrows():
                 with st.expander(f"🗓️ {row['data']} — {row['medico']}"):
                     st.markdown(f"**Relato:** {row['resumo']}")
             
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # 3. Gerador de Resumo Clínico com IA (Gemini)
             st.markdown("### 🤖 Resumo do Histórico Clínico")
             st.write("Gere uma síntese inteligente de todas as consultas acumuladas até ao momento.")
             
@@ -483,7 +478,6 @@ with tab5:
                 if api_key:
                     with st.spinner("A analisar todo o histórico de consultas com a IA..."):
                         try:
-                            # Prepara o texto com todo o histórico cronológico
                             texto_historico = ""
                             for _, r in df_consultas.iterrows():
                                 texto_historico += f"- Data: {r['data']} | Vet/Clínica: {r['medico']}\n  Relato: {r['resumo']}\n\n"
@@ -502,7 +496,7 @@ with tab5:
                             """
                             
                             response = client.models.generate_content(
-                                model="gemini-2.5-flash",
+                                model="gemini-3.8-flash",
                                 contents=prompt_resumo
                             )
                             
@@ -513,7 +507,6 @@ with tab5:
                 else:
                     st.error("Chave GEMINI_API_KEY não configurada.")
 
-            # Exibe o resumo se ele existir no estado da sessão
             if st.session_state.resumo_consultas:
                 st.markdown("<br>", unsafe_allow_html=True)
                 with st.container(border=True):
