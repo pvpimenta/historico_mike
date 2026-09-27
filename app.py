@@ -10,6 +10,13 @@ import base64
 from io import BytesIO
 from supabase import create_client, Client
 
+# Tenta importar fpdf2 para gerar PDF (se instalado)
+try:
+    from fpdf import FPDF
+    FPDF_DISPONIVEL = True
+except ImportError:
+    FPDF_DISPONIVEL = False
+
 # ==========================================
 # CONFIGURAÇÃO DO BANCO DE DADOS (SUPABASE)
 # ==========================================
@@ -60,6 +67,74 @@ def gerar_backup_json():
     if not df.empty:
         return df.to_json(orient="records", indent=2, force_ascii=False)
     return None
+
+# ==========================================
+# FUNÇÕES DE GERAR RELATÓRIO (PDF / TEXTO)
+# ==========================================
+def construir_texto_relatorio(paciente, data_inicio, data_fim, incluir_resumo, incluir_detalhes, resumo_ia, df_periodo):
+    linhas = []
+    linhas.append("==================================================")
+    linhas.append(f"      RELATÓRIO CLÍNICO VETERINÁRIO - {paciente.upper()}")
+    linhas.append("==================================================")
+    linhas.append(f"Período: {data_inicio.strftime('%d/%m/%Y')} até {data_fim.strftime('%d/%m/%Y')}")
+    linhas.append(f"Data de Emissão: {datetime.date.today().strftime('%d/%m/%Y')}")
+    linhas.append("--------------------------------------------------\n")
+
+    if incluir_resumo and resumo_ia:
+        linhas.append("📌 RESUMO CLÍNICO (SÍNTESE DA IA):")
+        linhas.append(resumo_ia)
+        linhas.append("\n--------------------------------------------------\n")
+
+    if incluir_detalhes:
+        linhas.append(f"📋 HISTÓRICO DE REGISTROS E CONSULTAS ({len(df_periodo)} registro(s)):")
+        linhas.append("")
+        if not df_periodo.empty:
+            for idx, row in df_periodo.iterrows():
+                linhas.append(f"🗓️ Data: {row['data']} | Tipo: {row['tipo_documento']}")
+                linhas.append(f"🏥 Local/Médico: {row['medico']}")
+                linhas.append(f"📝 Detalhes: {row['resumo']}")
+                
+                params = row.get("parametros")
+                if isinstance(params, str):
+                    try:
+                        params = json.loads(params)
+                    except Exception:
+                        params = {}
+                if isinstance(params, dict) and len(params) > 0:
+                    linhas.append(f"📊 Parâmetros: {json.dumps(params, ensure_ascii=False)}")
+                linhas.append("-" * 40)
+        else:
+            linhas.append("Nenhum registro encontrado no período selecionado.")
+
+    return "\n".join(linhas)
+
+def gerar_pdf_bytes(texto_relatorio):
+    if not FPDF_DISPONIVEL:
+        return None
+    
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=10)
+    
+    # Trata caracteres especiais para codificação Latin-1 padrão do FPDF
+    texto_limpo = texto_relatorio.encode('latin-1', 'replace').decode('latin-1')
+    
+    for linha in texto_limpo.split('\n'):
+        if "RELATÓRIO CLÍNICO" in linha:
+            pdf.set_font("Helvetica", style="B", size=13)
+            pdf.cell(0, 8, linha, ln=True, align="C")
+            pdf.set_font("Helvetica", size=10)
+        elif linha.startswith("📌") or linha.startswith("📋"):
+            pdf.ln(2)
+            pdf.set_font("Helvetica", style="B", size=11)
+            pdf.multi_cell(0, 6, linha)
+            pdf.set_font("Helvetica", size=10)
+        elif linha.startswith("===") or linha.startswith("---"):
+            pdf.ln(1)
+        else:
+            pdf.multi_cell(0, 5, linha)
+            
+    return bytes(pdf.output())
 
 # ==========================================
 # FUNÇÕES DO BANCO DE DADOS (PERFIL/FOTO)
@@ -421,7 +496,7 @@ with tab4:
         st.info("O histórico está vazio ou a coluna 'parametros' não existe no banco de dados.")
 
 # ------------------------------------------
-# SEPARADOR 5: HISTÓRICO DE CONSULTAS
+# SEPARADOR 5: CONSULTAS E RELATÓRIO PARA VETERINÁRIO
 # ------------------------------------------
 with tab5:
     st.markdown("### 🩺 Histórico de Consultas Veterinárias")
@@ -513,5 +588,74 @@ with tab5:
                     st.markdown(st.session_state.resumo_consultas)
         else:
             st.info("Ainda não há nenhuma consulta cadastrada para este pet.")
+            
+        st.markdown("---")
+
+        # ==========================================
+        # NOVO: EXPORTAR RELATÓRIO PARA O VETERINÁRIO
+        # ==========================================
+        st.markdown("### 📄 Exportar Relatório para o Veterinário")
+        st.write("Selecione o período e o conteúdo para gerar um documento pronto para enviar ao médico.")
+
+        with st.container(border=True):
+            col_dt1, col_dt2 = st.columns(2)
+            with col_dt1:
+                dt_inicio = st.date_input("🗓️ Data Inicial", value=datetime.date.today() - datetime.timedelta(days=90))
+            with col_dt2:
+                dt_fim = st.date_input("🗓️ Data Final", value=datetime.date.today())
+
+            todo_historico = st.checkbox("📅 Selecionar Todo o Histórico (Ignorar Intervalo de Datas)")
+
+            conteudo_opcao = st.radio(
+                "O que deseja incluir no relatório?",
+                ["Resumo da IA + Histórico Detalhado", "Apenas Resumo da IA", "Apenas Histórico Detalhado"],
+                horizontal=True
+            )
+
+            # Filtra os dados conforme as opções escolhidas
+            df_pet = df_todas[df_todas["paciente"] == nome_perfil].copy()
+            df_pet['data_dt'] = pd.to_datetime(df_pet['data'], errors='coerce').dt.date
+
+            if not todo_historico:
+                df_periodo = df_pet[(df_pet['data_dt'] >= dt_inicio) & (df_pet['data_dt'] <= dt_fim)].sort_values(by="data", ascending=True)
+            else:
+                df_periodo = df_pet.sort_values(by="data", ascending=True)
+
+            incluir_resumo = "Resumo" in conteudo_opcao
+            incluir_detalhes = "Histórico" in conteudo_opcao
+
+            texto_exportacao = construir_texto_relatorio(
+                nome_perfil,
+                dt_inicio if not todo_historico else datetime.date(2000, 1, 1),
+                dt_fim if not todo_historico else datetime.date.today(),
+                incluir_resumo,
+                incluir_detalhes,
+                st.session_state.resumo_consultas,
+                df_periodo
+            )
+
+            col_btn1, col_btn2 = st.columns(2)
+            
+            with col_btn1:
+                st.download_button(
+                    label="📝 Baixar em Texto (.txt)",
+                    data=texto_exportacao.encode('utf-8'),
+                    file_name=f"relatorio_vet_{nome_perfil}_{datetime.date.today()}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+
+            with col_btn2:
+                pdf_bytes = gerar_pdf_bytes(texto_exportacao)
+                if pdf_bytes:
+                    st.download_button(
+                        label="📄 Baixar em PDF",
+                        data=pdf_bytes,
+                        file_name=f"relatorio_vet_{nome_perfil}_{datetime.date.today()}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
+                else:
+                    st.info("Para ativar o download em PDF, adicione `fpdf2` ao arquivo `requirements.txt`.")
     else:
         st.info("Nenhum dado encontrado no banco de dados.")
