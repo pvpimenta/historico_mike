@@ -35,9 +35,6 @@ supabase: Client = create_client(supabase_url, supabase_key)
 # ==========================================
 # PROVEDORES DE IA E SISTEMA DE FALLBACK
 # ==========================================
-# ==========================================
-# PROVEDORES DE IA E SISTEMA DE FALLBACK
-# ==========================================
 
 def _chamar_gemini(prompt, json_mode=False):
     api_key = st.secrets.get("GEMINI_API_KEY")
@@ -74,7 +71,7 @@ def _chamar_groq(prompt, json_mode=False):
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
         if "json" not in prompt.lower():
-            prompt += "\\nResponda estritamente no formato JSON."
+            prompt += "\nResponda estritamente no formato JSON."
 
     response = client.chat.completions.create(
         model=groq_model,
@@ -642,7 +639,6 @@ with tab3:
                 st.warning("Por favor, preencha o nome do medicamento ou coleira.")
 
 
-
 # ------------------------------------------
 # SEPARADOR 4: DASHBOARD COM PARÂMETROS NORMAIS
 # ------------------------------------------
@@ -780,205 +776,3 @@ with tab5:
             
             detalhes_consulta = st.text_area("📝 O que foi dito na consulta?", height=120)
             btn_salvar_consulta = st.form_submit_button("💾 Guardar Consulta", use_container_width=True)
-            
-            if btn_salvar_consulta:
-                if detalhes_consulta.strip():
-                    if salvar_registro(nome_perfil, str(data_consulta), medico_consulta, "Consulta", detalhes_consulta, {}):
-                        st.toast("Consulta registrada com sucesso!", icon="✅")
-                        st.rerun()
-                else:
-                    st.warning("Descreva o que foi dito na consulta.")
-
-    st.markdown("---")
-    df_todas = carregar_historico()
-    
-    if not df_todas.empty:
-        df_consultas = df_todas[
-            (df_todas["paciente"] == nome_perfil) & 
-            (df_todas["tipo_documento"].str.contains("Consulta", case=False, na=False))
-        ].sort_values(by="data", ascending=False)
-        
-        if not df_consultas.empty:
-            st.subheader(f"📋 Registo das Consultas ({len(df_consultas)})")
-            for idx, row in df_consultas.iterrows():
-                with st.expander(f"🗓️ {row['data']} — {row['medico']}"):
-                    st.markdown(f"**Relato:** {row['resumo']}")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.markdown("### 🤖 Gerar Relatório Completo (IA)")
-            st.write("A IA vai ler **Consultas**, **Exames Numéricos** e a aba de **Medicamentos** para criar o panorama geral.")
-            
-            if st.button("✨ Gerar/Atualizar Resumo do Histórico", type="primary", use_container_width=True):
-                if tem_gemini or tem_groq:
-                    with st.spinner("A analisar o perfil, exames, medicações e histórico com a IA..."):
-                        try:
-                            df_pet_completo = df_todas[df_todas["paciente"] == nome_perfil].sort_values(by="data", ascending=True)
-                            
-                            texto_historico = ""
-                            for _, r in df_pet_completo.iterrows():
-                                texto_historico += f"- Data: {r['data']} | Tipo: {r['tipo_documento']} | Vet/Clínica: {r['medico']}\n"
-                                texto_historico += f"  Detalhes/Doses: {r['resumo']}\n"
-                                
-                                params = r.get("parametros")
-                                if isinstance(params, str):
-                                    try:
-                                        params = json.loads(params)
-                                    except:
-                                        params = {}
-                                
-                                if isinstance(params, dict) and len(params) > 0:
-                                    texto_historico += f"  Parâmetros do Exame: {json.dumps(params, ensure_ascii=False)}\n"
-                                texto_historico += "\n"
-                            
-                            idade_do_pet = calcular_idade(data_nasc_input) if data_nasc_input else "Idade não informada"
-                            
-                            prompt_resumo = f"""
-                            Você é um médico veterinário altamente experiente. Analise o perfil e o banco de dados completo do paciente abaixo:
-
-                            🐶 DADOS DO PACIENTE:
-                            - Nome: {nome_perfil}
-                            - Idade Atual: {idade_do_pet}
-
-                            📋 BANCO DE DADOS CLÍNICO (Consultas, Exames e Medicamentos):
-                            {texto_historico}
-
-                            Com base de forma ESTRITA nesses dados, elabore um relatório clínico. Organize a resposta nos seguintes tópicos em Markdown:
-                            1. 📌 **Visão Geral:** Saúde geral do pet considerando a idade de {idade_do_pet}.
-                            2. 📈 **Análise de Exames:** Variação dos números dos exames ao longo do tempo. Há algo fora do normal?
-                            3. 💊 **Medicações Atuais e Históricas:** Avalie a lista de medicamentos, doses e frequência relatadas nos dados.
-                            4. ⏱️ **Evolução de Sintomas:** Como os problemas clínicos evoluíram (melhora ou piora)?
-                            5. 💡 **Conduta e Recomendações:** O que o tutor deve vigiar nos próximos meses.
-                            """
-                            
-                            st.session_state.resumo_consultas = executar_ia_com_fallback(prompt_resumo, json_mode=False)
-                            st.toast("Relatório completo gerado!", icon="🩺")
-                        except Exception as e:
-                            st.error(f"Erro ao gerar resumo: {e}")
-                else:
-                    st.error("Nenhuma chave de IA configurada nos Secrets.")
-
-            if st.session_state.resumo_consultas:
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.info(st.session_state.resumo_consultas)
-
-# ------------------------------------------
-# SEPARADOR 6: MEDICAMENTOS (NOVA ABA)
-# ------------------------------------------
-with tab6:
-    st.markdown("### 💊 Gestão de Medicamentos")
-    st.write("Adicione remédios contínuos, desparasitantes ou tratamentos temporários.")
-    
-    with st.container(border=True):
-        st.subheader("➕ Adicionar Novo Medicamento")
-        with st.form("form_medicamento"):
-            nome_med = st.text_input("Nome do Medicamento (Ex: Apoquel, Bravecto, Insulina)")
-            
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                dose_med = st.text_input("Dose (Ex: 1 comprimido, 5ml, 2 UI)")
-            with col_m2:
-                freq_med = st.text_input("Frequência (Ex: A cada 12h, 1x ao mês)")
-                
-            data_inicio = st.date_input("Data de Início do Tratamento", value=datetime.date.today())
-            
-            if st.form_submit_button("Guardar Medicamento", use_container_width=True):
-                if nome_med and dose_med:
-                    resumo_med = f"Medicamento: {nome_med} | Dose: {dose_med} | Frequência: {freq_med}"
-                    # Salvamos no banco de dados como tipo "Medicamento" para a IA conseguir filtrar e ler depois
-                    salvar_registro(nome_perfil, str(data_inicio), "Prescrição / Casa", "Medicamento", resumo_med, {})
-                    st.toast("Medicamento adicionado ao histórico!", icon="✅")
-                    st.rerun()
-                else:
-                    st.warning("Por favor, preencha pelo menos o Nome e a Dose do medicamento.")
-                    
-    st.markdown("---")
-    
-    # Mostrar lista de medicamentos já guardados
-    try:
-        df_historico_med = carregar_historico()
-        if not df_historico_med.empty:
-            df_meds = df_historico_med[
-                (df_historico_med["paciente"] == nome_perfil) & 
-                (df_historico_med["tipo_documento"] == "Medicamento")
-            ].sort_values(by="data", ascending=False)
-            
-            if not df_meds.empty:
-                st.subheader(f"📋 Lista de Medicações Registadas ({len(df_meds)})")
-                for _, row in df_meds.iterrows():
-                    with st.container(border=True):
-                        st.markdown(f"**🗓️ Início:** {row['data']}")
-                        st.markdown(f"**💊 Detalhes:** {row['resumo']}")
-            else:
-                st.info("Ainda não há medicamentos registados para este pet.")
-    except Exception as e:
-        pass
-        
-        else:
-            st.info("Ainda não há nenhuma consulta cadastrada para este pet.")
-            
-        st.markdown("---")
-
-        st.markdown("### 📄 Exportar Relatório para o Veterinário")
-        st.write("Selecione o período e o conteúdo para gerar um documento pronto para enviar ao médico.")
-
-        with st.container(border=True):
-            col_dt1, col_dt2 = st.columns(2)
-            with col_dt1:
-                dt_inicio = st.date_input("🗓️ Data Inicial", value=datetime.date.today() - datetime.timedelta(days=90))
-            with col_dt2:
-                dt_fim = st.date_input("🗓️ Data Final", value=datetime.date.today())
-
-            todo_historico = st.checkbox("📅 Selecionar Todo o Histórico (Ignorar Intervalo de Datas)")
-
-            conteudo_opcao = st.radio(
-                "O que deseja incluir no relatório?",
-                ["Resumo da IA + Histórico Detalhado", "Apenas Resumo da IA", "Apenas Histórico Detalhado"],
-                horizontal=True
-            )
-
-            df_pet = df_todas[df_todas["paciente"] == nome_perfil].copy()
-            df_pet['data_dt'] = pd.to_datetime(df_pet['data'], errors='coerce').dt.date
-
-            if not todo_historico:
-                df_periodo = df_pet[(df_pet['data_dt'] >= dt_inicio) & (df_pet['data_dt'] <= dt_fim)].sort_values(by="data", ascending=True)
-            else:
-                df_periodo = df_pet.sort_values(by="data", ascending=True)
-
-            incluir_resumo = "Resumo" in conteudo_opcao
-            incluir_detalhes = "Histórico" in conteudo_opcao
-
-            texto_exportacao = construir_texto_relatorio(
-                nome_perfil,
-                dt_inicio if not todo_historico else datetime.date(2000, 1, 1),
-                dt_fim if not todo_historico else datetime.date.today(),
-                incluir_resumo,
-                incluir_detalhes,
-                st.session_state.resumo_consultas,
-                df_periodo
-            )
-
-            col_btn1, col_btn2 = st.columns(2)
-            
-            with col_btn1:
-                st.download_button(
-                    label="📝 Baixar em Texto (.txt)",
-                    data=texto_exportacao.encode('utf-8'),
-                    file_name=f"relatorio_vet_{nome_perfil}_{datetime.date.today()}.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-
-            with col_btn2:
-                pdf_bytes = gerar_pdf_bytes(texto_exportacao)
-                if pdf_bytes:
-                    st.download_button(
-                        label="📄 Baixar em PDF",
-                        data=pdf_bytes,
-                        file_name=f"relatorio_vet_{nome_perfil}_{datetime.date.today()}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-                else:
-                    st.info("Para ativar o download em PDF, adicione `fpdf2` ao arquivo `requirements.txt`.")
-    else:
-        st.info("Nenum dado encontrado no banco de dados.")
