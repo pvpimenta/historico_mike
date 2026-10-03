@@ -413,12 +413,13 @@ if not (tem_gemini or tem_groq):
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📝 Adicionar Registo", 
     "🗂️ Histórico", 
     "⏰ Lembretes", 
     "📊 Dashboard", 
-    "🩺 Consultas"
+    "🩺 Consultas",
+    "💊 Medicamentos"
 ])
 
 # ------------------------------------------
@@ -640,15 +641,14 @@ with tab3:
             else:
                 st.warning("Por favor, preencha o nome do medicamento ou coleira.")
 
+
+
 # ------------------------------------------
-# SEPARADOR 4: DASHBOARD
-# ------------------------------------------
-# ------------------------------------------
-# SEPARADOR 4: DASHBOARD
+# SEPARADOR 4: DASHBOARD COM PARÂMETROS NORMAIS
 # ------------------------------------------
 with tab4:
     st.markdown("### 📈 Evolução dos Parâmetros Clínicos")
-    st.write("Acompanhe o histórico de exames com análises detalhadas de variação ao longo do tempo.")
+    st.write("Acompanhe o histórico de exames com análises detalhadas e compare com os valores de referência normais.")
     
     df_dash = carregar_historico()
     
@@ -677,7 +677,6 @@ with tab4:
                 
         if lista_parametros:
             df_plot = pd.DataFrame(lista_parametros)
-            # Definir as datas como índice para facilitar a plotagem e cálculos
             df_plot.index = pd.to_datetime(datas_validas)
             df_plot = df_plot.sort_index()
             
@@ -685,40 +684,42 @@ with tab4:
             param_selecionado = st.selectbox("🔬 Qual exame/parâmetro deseja visualizar?", colunas_disponiveis)
             
             if param_selecionado:
-                # Filtrar apenas a coluna selecionada e remover NAs
                 df_serie = df_plot[[param_selecionado]].dropna()
                 
                 if not df_serie.empty:
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    # --- 1. CARTÕES DE INDICADORES (KPIs) ---
+                    # --- VALORES DE REFERÊNCIA (NOVO) ---
+                    st.markdown("##### 📌 Faixa de Referência Normal (Opcional)")
+                    col_ref1, col_ref2 = st.columns(2)
+                    with col_ref1:
+                        ref_min = st.number_input("Valor Mínimo Saudável", value=0.0, step=0.1)
+                    with col_ref2:
+                        ref_max = st.number_input("Valor Máximo Saudável", value=0.0, step=0.1)
+                    
+                    # --- CARTÕES DE INDICADORES ---
                     valor_atual = df_serie[param_selecionado].iloc[-1]
                     valor_anterior = df_serie[param_selecionado].iloc[-2] if len(df_serie) > 1 else None
-                    
                     data_atual_str = df_serie.index[-1].strftime('%d/%m/%Y')
                     
+                    st.markdown("---")
                     col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
                     
                     with col_kpi1:
                         if valor_anterior is not None:
                             variacao = valor_atual - valor_anterior
-                            st.metric(
-                                label=f"Último Registo ({data_atual_str})", 
-                                value=f"{valor_atual}", 
-                                delta=f"{variacao:.2f} (desde o último)"
-                            )
+                            st.metric(label=f"Último Registo ({data_atual_str})", value=f"{valor_atual}", delta=f"{variacao:.2f}")
                         else:
                             st.metric(label=f"Último Registo ({data_atual_str})", value=f"{valor_atual}")
                             
                     with col_kpi2:
                         st.metric(label="Máximo Histórico", value=f"{df_serie[param_selecionado].max()}")
-                        
                     with col_kpi3:
                         st.metric(label="Mínimo Histórico", value=f"{df_serie[param_selecionado].min()}")
                         
                     st.markdown("---")
                     
-                    # --- 2. GRÁFICO INTERATIVO PLOTLY ---
+                    # --- GRÁFICO INTERATIVO PLOTLY ---
                     fig = px.line(
                         df_serie, 
                         x=df_serie.index, 
@@ -728,13 +729,20 @@ with tab4:
                         title=f"Histórico Clínico: <b>{param_selecionado.upper()}</b>"
                     )
                     
-                    # Ajustes profissionais de design do gráfico
                     fig.update_traces(
                         textposition="top center",
-                        line=dict(color="#FF4B4B", width=3), # Cor primária padrão
+                        line=dict(color="#FF4B4B", width=3),
                         marker=dict(size=9, symbol="circle", line=dict(color="white", width=2)),
                         textfont=dict(size=11, color="gray")
                     )
+                    
+                    # Adicionar a faixa verde de referência se o utilizador preencheu
+                    if ref_min < ref_max:
+                        fig.add_hrect(
+                            y0=ref_min, y1=ref_max, 
+                            line_width=0, fillcolor="green", opacity=0.15,
+                            annotation_text="Faixa Normal", annotation_position="top right"
+                        )
                     
                     fig.update_layout(
                         hovermode="x unified",
@@ -752,16 +760,14 @@ with tab4:
                     st.warning("Não há dados numéricos suficientes para desenhar o gráfico deste parâmetro.")
         else:
             st.info("Nenhum parâmetro numérico foi extraído nos registos deste paciente ainda.")
-    else:
-        st.info("O histórico está vazio ou a coluna 'parametros' não existe no banco de dados.")
 
         
 # ------------------------------------------
-# SEPARADOR 5: CONSULTAS E RELATÓRIO PARA VETERINÁRIO
+# SEPARADOR 5: CONSULTAS E RELATÓRIO DA IA
 # ------------------------------------------
 with tab5:
     st.markdown("### 🩺 Histórico de Consultas Veterinárias")
-    st.write("Registe o que foi falado nas consultas e gere um resumo inteligente de toda a evolução médica.")
+    st.write("Registe o que foi falado nas consultas e gere um resumo inteligente com a IA (Consultas, Exames e Medicações).")
     
     with st.container(border=True):
         st.subheader("➕ Registar Nova Consulta")
@@ -772,12 +778,7 @@ with tab5:
             with col_c2:
                 medico_consulta = st.text_input("👨‍⚕️ Veterinário / Clínica", value="Dr. Veterinário")
             
-            detalhes_consulta = st.text_area(
-                "📝 O que foi dito na consulta?", 
-                placeholder="Ex: O pet apresentou episódios de vómito. O veterinário receitou Plasil por 3 dias e pediu exame de sangue.",
-                height=120
-            )
-            
+            detalhes_consulta = st.text_area("📝 O que foi dito na consulta?", height=120)
             btn_salvar_consulta = st.form_submit_button("💾 Guardar Consulta", use_container_width=True)
             
             if btn_salvar_consulta:
@@ -786,44 +787,38 @@ with tab5:
                         st.toast("Consulta registrada com sucesso!", icon="✅")
                         st.rerun()
                 else:
-                    st.warning("Por favor, descreva o que foi dito na consulta.")
+                    st.warning("Descreva o que foi dito na consulta.")
 
     st.markdown("---")
-
     df_todas = carregar_historico()
     
     if not df_todas.empty:
         df_consultas = df_todas[
             (df_todas["paciente"] == nome_perfil) & 
             (df_todas["tipo_documento"].str.contains("Consulta", case=False, na=False))
-        ].sort_values(by="data", ascending=True)
+        ].sort_values(by="data", ascending=False)
         
         if not df_consultas.empty:
             st.subheader(f"📋 Registo das Consultas ({len(df_consultas)})")
-            
-            for idx, row in df_consultas.sort_values(by="data", ascending=False).iterrows():
+            for idx, row in df_consultas.iterrows():
                 with st.expander(f"🗓️ {row['data']} — {row['medico']}"):
                     st.markdown(f"**Relato:** {row['resumo']}")
             
             st.markdown("<br>", unsafe_allow_html=True)
-            
-            st.markdown("### 🤖 Resumo do Histórico Clínico")
-            st.write("Gere uma síntese inteligente de todas as consultas acumuladas até ao momento.")
+            st.markdown("### 🤖 Gerar Relatório Completo (IA)")
+            st.write("A IA vai ler **Consultas**, **Exames Numéricos** e a aba de **Medicamentos** para criar o panorama geral.")
             
             if st.button("✨ Gerar/Atualizar Resumo do Histórico", type="primary", use_container_width=True):
                 if tem_gemini or tem_groq:
-                    with st.spinner("A analisar o perfil, exames e histórico clínico com a IA..."):
+                    with st.spinner("A analisar o perfil, exames, medicações e histórico com a IA..."):
                         try:
-                            # 1. Pegar em TODOS os registos do paciente (Consultas + Exames)
                             df_pet_completo = df_todas[df_todas["paciente"] == nome_perfil].sort_values(by="data", ascending=True)
                             
-                            # 2. Montar o texto incluindo os parâmetros numéricos
                             texto_historico = ""
                             for _, r in df_pet_completo.iterrows():
                                 texto_historico += f"- Data: {r['data']} | Tipo: {r['tipo_documento']} | Vet/Clínica: {r['medico']}\n"
-                                texto_historico += f"  Relato/Resumo: {r['resumo']}\n"
+                                texto_historico += f"  Detalhes/Doses: {r['resumo']}\n"
                                 
-                                # Processar parâmetros se existirem
                                 params = r.get("parametros")
                                 if isinstance(params, str):
                                     try:
@@ -832,34 +827,31 @@ with tab5:
                                         params = {}
                                 
                                 if isinstance(params, dict) and len(params) > 0:
-                                    texto_historico += f"  Exames/Parâmetros: {json.dumps(params, ensure_ascii=False)}\n"
-                                
+                                    texto_historico += f"  Parâmetros do Exame: {json.dumps(params, ensure_ascii=False)}\n"
                                 texto_historico += "\n"
                             
-                            # Calcula a idade baseada no input da barra lateral
                             idade_do_pet = calcular_idade(data_nasc_input) if data_nasc_input else "Idade não informada"
                             
-                            # 3. Novo Prompt que inclui o PERFIL do pet e força a correlação com a idade
                             prompt_resumo = f"""
-                            Você é um assistente veterinário altamente experiente. Analise o perfil e o histórico cronológico completo de consultas e exames do paciente abaixo:
+                            Você é um médico veterinário altamente experiente. Analise o perfil e o banco de dados completo do paciente abaixo:
 
                             🐶 DADOS DO PACIENTE:
                             - Nome: {nome_perfil}
                             - Idade Atual: {idade_do_pet}
 
-                            📋 HISTÓRICO CLÍNICO E EXAMES:
+                            📋 BANCO DE DADOS CLÍNICO (Consultas, Exames e Medicamentos):
                             {texto_historico}
 
-                            Elabore um resumo clínico claro, estruturado e fácil de ler para o tutor. Organize a resposta estritamente nos seguintes tópicos em Markdown:
-                            1. 📌 **Visão Geral do Caso:** (Breve resumo da saúde geral do pet, levando em grande consideração a sua idade atual: {idade_do_pet})
-                            2. 📈 **Evolução de Exames e Parâmetros:** (Analise a variação dos números dos exames ao longo do tempo. Destaque se as alterações são esperadas para a idade ou se requerem atenção redobrada)
-                            3. ⏱️ **Evolução Cronológica dos Sintomas:** (O que mudou clinicamente ao longo do tempo)
-                            4. 💊 **Tratamentos e Medicamentos:** (O que já foi prescrito/usado)
-                            5. 💡 **Recomendações e Alertas:** (Pontos de atenção e recomendações preventivas para a idade atual)
+                            Com base de forma ESTRITA nesses dados, elabore um relatório clínico. Organize a resposta nos seguintes tópicos em Markdown:
+                            1. 📌 **Visão Geral:** Saúde geral do pet considerando a idade de {idade_do_pet}.
+                            2. 📈 **Análise de Exames:** Variação dos números dos exames ao longo do tempo. Há algo fora do normal?
+                            3. 💊 **Medicações Atuais e Históricas:** Avalie a lista de medicamentos, doses e frequência relatadas nos dados.
+                            4. ⏱️ **Evolução de Sintomas:** Como os problemas clínicos evoluíram (melhora ou piora)?
+                            5. 💡 **Conduta e Recomendações:** O que o tutor deve vigiar nos próximos meses.
                             """
                             
                             st.session_state.resumo_consultas = executar_ia_com_fallback(prompt_resumo, json_mode=False)
-                            st.toast("Resumo clínico atualizado com perfil e exames!", icon="🩺")
+                            st.toast("Relatório completo gerado!", icon="🩺")
                         except Exception as e:
                             st.error(f"Erro ao gerar resumo: {e}")
                 else:
@@ -867,8 +859,60 @@ with tab5:
 
             if st.session_state.resumo_consultas:
                 st.markdown("<br>", unsafe_allow_html=True)
-                with st.container(border=True):
-                    st.markdown(st.session_state.resumo_consultas)
+                st.info(st.session_state.resumo_consultas)
+
+# ------------------------------------------
+# SEPARADOR 6: MEDICAMENTOS (NOVA ABA)
+# ------------------------------------------
+with tab6:
+    st.markdown("### 💊 Gestão de Medicamentos")
+    st.write("Adicione remédios contínuos, desparasitantes ou tratamentos temporários.")
+    
+    with st.container(border=True):
+        st.subheader("➕ Adicionar Novo Medicamento")
+        with st.form("form_medicamento"):
+            nome_med = st.text_input("Nome do Medicamento (Ex: Apoquel, Bravecto, Insulina)")
+            
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                dose_med = st.text_input("Dose (Ex: 1 comprimido, 5ml, 2 UI)")
+            with col_m2:
+                freq_med = st.text_input("Frequência (Ex: A cada 12h, 1x ao mês)")
+                
+            data_inicio = st.date_input("Data de Início do Tratamento", value=datetime.date.today())
+            
+            if st.form_submit_button("Guardar Medicamento", use_container_width=True):
+                if nome_med and dose_med:
+                    resumo_med = f"Medicamento: {nome_med} | Dose: {dose_med} | Frequência: {freq_med}"
+                    # Salvamos no banco de dados como tipo "Medicamento" para a IA conseguir filtrar e ler depois
+                    salvar_registro(nome_perfil, str(data_inicio), "Prescrição / Casa", "Medicamento", resumo_med, {})
+                    st.toast("Medicamento adicionado ao histórico!", icon="✅")
+                    st.rerun()
+                else:
+                    st.warning("Por favor, preencha pelo menos o Nome e a Dose do medicamento.")
+                    
+    st.markdown("---")
+    
+    # Mostrar lista de medicamentos já guardados
+    try:
+        df_historico_med = carregar_historico()
+        if not df_historico_med.empty:
+            df_meds = df_historico_med[
+                (df_historico_med["paciente"] == nome_perfil) & 
+                (df_historico_med["tipo_documento"] == "Medicamento")
+            ].sort_values(by="data", ascending=False)
+            
+            if not df_meds.empty:
+                st.subheader(f"📋 Lista de Medicações Registadas ({len(df_meds)})")
+                for _, row in df_meds.iterrows():
+                    with st.container(border=True):
+                        st.markdown(f"**🗓️ Início:** {row['data']}")
+                        st.markdown(f"**💊 Detalhes:** {row['resumo']}")
+            else:
+                st.info("Ainda não há medicamentos registados para este pet.")
+    except Exception as e:
+        pass
+        
         else:
             st.info("Ainda não há nenhuma consulta cadastrada para este pet.")
             
