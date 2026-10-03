@@ -1,4 +1,5 @@
 import streamlit as st
+import plotly.express as px
 import pandas as pd
 from PIL import Image
 from google import genai
@@ -642,9 +643,12 @@ with tab3:
 # ------------------------------------------
 # SEPARADOR 4: DASHBOARD
 # ------------------------------------------
+# ------------------------------------------
+# SEPARADOR 4: DASHBOARD
+# ------------------------------------------
 with tab4:
     st.markdown("### 📈 Evolução dos Parâmetros Clínicos")
-    st.write("Acompanhe os resultados dos exames ao longo do tempo.")
+    st.write("Acompanhe o histórico de exames com análises detalhadas de variação ao longo do tempo.")
     
     df_dash = carregar_historico()
     
@@ -673,16 +677,77 @@ with tab4:
                 
         if lista_parametros:
             df_plot = pd.DataFrame(lista_parametros)
-            df_plot.index = datas_validas
+            # Definir as datas como índice para facilitar a plotagem e cálculos
+            df_plot.index = pd.to_datetime(datas_validas)
+            df_plot = df_plot.sort_index()
             
             colunas_disponiveis = df_plot.columns.tolist()
             param_selecionado = st.selectbox("🔬 Qual exame/parâmetro deseja visualizar?", colunas_disponiveis)
             
             if param_selecionado:
-                df_serie = df_plot[param_selecionado].dropna()
+                # Filtrar apenas a coluna selecionada e remover NAs
+                df_serie = df_plot[[param_selecionado]].dropna()
                 
                 if not df_serie.empty:
-                    st.line_chart(df_serie)
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    # --- 1. CARTÕES DE INDICADORES (KPIs) ---
+                    valor_atual = df_serie[param_selecionado].iloc[-1]
+                    valor_anterior = df_serie[param_selecionado].iloc[-2] if len(df_serie) > 1 else None
+                    
+                    data_atual_str = df_serie.index[-1].strftime('%d/%m/%Y')
+                    
+                    col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
+                    
+                    with col_kpi1:
+                        if valor_anterior is not None:
+                            variacao = valor_atual - valor_anterior
+                            st.metric(
+                                label=f"Último Registo ({data_atual_str})", 
+                                value=f"{valor_atual}", 
+                                delta=f"{variacao:.2f} (desde o último)"
+                            )
+                        else:
+                            st.metric(label=f"Último Registo ({data_atual_str})", value=f"{valor_atual}")
+                            
+                    with col_kpi2:
+                        st.metric(label="Máximo Histórico", value=f"{df_serie[param_selecionado].max()}")
+                        
+                    with col_kpi3:
+                        st.metric(label="Mínimo Histórico", value=f"{df_serie[param_selecionado].min()}")
+                        
+                    st.markdown("---")
+                    
+                    # --- 2. GRÁFICO INTERATIVO PLOTLY ---
+                    fig = px.line(
+                        df_serie, 
+                        x=df_serie.index, 
+                        y=param_selecionado,
+                        markers=True,
+                        text=param_selecionado,
+                        title=f"Histórico Clínico: <b>{param_selecionado.upper()}</b>"
+                    )
+                    
+                    # Ajustes profissionais de design do gráfico
+                    fig.update_traces(
+                        textposition="top center",
+                        line=dict(color="#FF4B4B", width=3), # Cor primária padrão
+                        marker=dict(size=9, symbol="circle", line=dict(color="white", width=2)),
+                        textfont=dict(size=11, color="gray")
+                    )
+                    
+                    fig.update_layout(
+                        hovermode="x unified",
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        xaxis_title="Data do Exame",
+                        yaxis_title="Valor Registado",
+                        xaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.2)'),
+                        yaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.2)'),
+                        margin=dict(l=20, r=20, t=50, b=20)
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.warning("Não há dados numéricos suficientes para desenhar o gráfico deste parâmetro.")
         else:
@@ -690,6 +755,7 @@ with tab4:
     else:
         st.info("O histórico está vazio ou a coluna 'parametros' não existe no banco de dados.")
 
+        
 # ------------------------------------------
 # SEPARADOR 5: CONSULTAS E RELATÓRIO PARA VETERINÁRIO
 # ------------------------------------------
