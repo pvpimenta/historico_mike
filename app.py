@@ -812,26 +812,54 @@ with tab5:
             
             if st.button("✨ Gerar/Atualizar Resumo do Histórico", type="primary", use_container_width=True):
                 if tem_gemini or tem_groq:
-                    with st.spinner("A analisar todo o histórico de consultas com a IA..."):
+                    with st.spinner("A analisar o perfil, exames e histórico clínico com a IA..."):
                         try:
-                            texto_historico = ""
-                            for _, r in df_consultas.iterrows():
-                                texto_historico += f"- Data: {r['data']} | Vet/Clínica: {r['medico']}\n  Relato: {r['resumo']}\n\n"
+                            # 1. Pegar em TODOS os registos do paciente (Consultas + Exames)
+                            df_pet_completo = df_todas[df_todas["paciente"] == nome_perfil].sort_values(by="data", ascending=True)
                             
+                            # 2. Montar o texto incluindo os parâmetros numéricos
+                            texto_historico = ""
+                            for _, r in df_pet_completo.iterrows():
+                                texto_historico += f"- Data: {r['data']} | Tipo: {r['tipo_documento']} | Vet/Clínica: {r['medico']}\n"
+                                texto_historico += f"  Relato/Resumo: {r['resumo']}\n"
+                                
+                                # Processar parâmetros se existirem
+                                params = r.get("parametros")
+                                if isinstance(params, str):
+                                    try:
+                                        params = json.loads(params)
+                                    except:
+                                        params = {}
+                                
+                                if isinstance(params, dict) and len(params) > 0:
+                                    texto_historico += f"  Exames/Parâmetros: {json.dumps(params, ensure_ascii=False)}\n"
+                                
+                                texto_historico += "\n"
+                            
+                            # Calcula a idade baseada no input da barra lateral
+                            idade_do_pet = calcular_idade(data_nasc_input) if data_nasc_input else "Idade não informada"
+                            
+                            # 3. Novo Prompt que inclui o PERFIL do pet e força a correlação com a idade
                             prompt_resumo = f"""
-                            Você é um assistente veterinário experiente. Analise o histórico cronológico de todas as consultas médicas do pet {nome_perfil} abaixo:
+                            Você é um assistente veterinário altamente experiente. Analise o perfil e o histórico cronológico completo de consultas e exames do paciente abaixo:
 
+                            🐶 DADOS DO PACIENTE:
+                            - Nome: {nome_perfil}
+                            - Idade Atual: {idade_do_pet}
+
+                            📋 HISTÓRICO CLÍNICO E EXAMES:
                             {texto_historico}
 
-                            Elabore um resumo clínico claro, estruturado e fácil de ler para o tutor. Organize a resposta nos seguintes tópicos em Markdown:
-                            1. 📌 **Visão Geral do Caso:** (Breve resumo da saúde geral do pet)
-                            2. ⏱️ **Evolução Cronológica dos Sintomas/Sinais:** (O que mudou ao longo do tempo)
-                            3. 💊 **Tratamentos e Medicamentos Citados:** (O que já foi prescrito/usado)
-                            4. 💡 **Recomendações e Pontos de Atenção:** (Cuidados contínuos recomendados pelos médicos)
+                            Elabore um resumo clínico claro, estruturado e fácil de ler para o tutor. Organize a resposta estritamente nos seguintes tópicos em Markdown:
+                            1. 📌 **Visão Geral do Caso:** (Breve resumo da saúde geral do pet, levando em grande consideração a sua idade atual: {idade_do_pet})
+                            2. 📈 **Evolução de Exames e Parâmetros:** (Analise a variação dos números dos exames ao longo do tempo. Destaque se as alterações são esperadas para a idade ou se requerem atenção redobrada)
+                            3. ⏱️ **Evolução Cronológica dos Sintomas:** (O que mudou clinicamente ao longo do tempo)
+                            4. 💊 **Tratamentos e Medicamentos:** (O que já foi prescrito/usado)
+                            5. 💡 **Recomendações e Alertas:** (Pontos de atenção e recomendações preventivas para a idade atual)
                             """
                             
                             st.session_state.resumo_consultas = executar_ia_com_fallback(prompt_resumo, json_mode=False)
-                            st.toast("Resumo clínico atualizado!", icon="🩺")
+                            st.toast("Resumo clínico atualizado com perfil e exames!", icon="🩺")
                         except Exception as e:
                             st.error(f"Erro ao gerar resumo: {e}")
                 else:
