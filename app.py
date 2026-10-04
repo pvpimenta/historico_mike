@@ -314,12 +314,14 @@ def calcular_idade(data_nascimento):
         
     return " e ".join(partes)
 
-def salvar_perfil(nome_pet, foto_base64=None, data_nascimento=None):
+def salvar_perfil(nome_pet, foto_base64=None, data_nascimento=None, raca=None):
     dados = {"nome_pet": nome_pet}
     if foto_base64 is not None:
         dados["foto_base64"] = foto_base64
     if data_nascimento is not None:
         dados["data_nascimento"] = str(data_nascimento)
+    if raca is not None:
+        dados["raca"] = raca
         
     try:
         res = supabase.table("perfil").select("*").eq("nome_pet", nome_pet).execute()
@@ -356,11 +358,14 @@ st.set_page_config(page_title="Relatório do Pet", page_icon="🐕", layout="cen
 # BARRA LATERAL (PERFIL)
 # ==========================================
 with st.sidebar:
+    with st.sidebar:
     st.title("🐾 Perfil do Pet")
     nome_perfil = st.text_input("Nome do Paciente", value="Mike", key="nome_perfil")
-    st.markdown("---")
     
     perfil_dados = carregar_perfil(nome_perfil)
+    raca_atual = perfil_dados.get("raca", "")
+    raca_input = st.text_input("🐕 Espécie / Raça", value=raca_atual, placeholder="Ex: Cão - Golden Retriever")
+    st.markdown("---")
     foto_b64 = perfil_dados.get("foto_base64")
     data_nasc_str = perfil_dados.get("data_nascimento")
     
@@ -398,8 +403,8 @@ with st.sidebar:
             img.thumbnail((400, 400))
             img_b64 = image_to_base64(img)
             
-        if salvar_perfil(nome_perfil, img_b64, data_nasc_input):
-            st.success("Perfil e data de nascimento salvos!")
+        if salvar_perfil(nome_perfil, img_b64, data_nasc_input, raca_input):
+            st.success("Perfil atualizado com sucesso!")
             st.rerun()
 
 # ==========================================
@@ -860,25 +865,40 @@ with tab5:
                                     texto_historico += f"  Parâmetros do Exame: {json.dumps(params, ensure_ascii=False)}\n"
                                 texto_historico += "\n"
                             
-                            idade_do_pet = calcular_idade(data_nasc_input) if data_nasc_input else "Idade não informada"
-                            
-                            prompt_resumo = f"""
-                            Você é um médico veterinário altamente experiente. Analise o perfil e o banco de dados completo do paciente abaixo:
+                            idade_pet = calcular_idade(data_nasc_input) if data_nasc_input else "idade desconhecida"
+                        raca_pet = raca_input if raca_input else "espécie desconhecida"
 
-                            🐶 DADOS DO PACIENTE:
-                            - Nome: {nome_perfil}
-                            - Idade Atual: {idade_do_pet}
-
-                            📋 BANCO DE DADOS CLÍNICO (Consultas, Exames e Medicamentos):
-                            {texto_historico}
-
-                            Com base de forma ESTRITA nesses dados, elabore um relatório clínico. Organize a resposta nos seguintes tópicos em Markdown:
-                            1. 📌 **Visão Geral:** Saúde geral do pet considerando a idade de {idade_do_pet}.
-                            2. 📈 **Análise de Exames:** Variação dos números dos exames ao longo do tempo. Há algo fora do normal?
-                            3. 💊 **Medicações Atuais e Históricas:** Avalie a lista de medicamentos, doses e frequência relatadas nos dados.
-                            4. ⏱️ **Evolução de Sintomas:** Como os problemas clínicos evoluíram (melhora ou piora)?
-                            5. 💡 **Conduta e Recomendações:** O que o tutor deve vigiar nos próximos meses.
-                            """
+                        prompt = f"""
+                        Você é um médico veterinário patologista. Leia o seguinte texto extraído de um exame/documento:
+                        
+                        TEXTO EXTRAÍDO:
+                        {texto_extraido}
+                        
+                        PACIENTE: {nome_paciente} ({raca_pet}, {idade_pet}).
+                        
+                        Extraia as informações estruturadas estritamente no formato JSON abaixo.
+                        
+                        REGRAS PARA PARÂMETROS:
+                        1. Se o exame contiver valores numéricos (ex: Ureia, Creatinina, ALT, etc.), extraia-os.
+                        2. É OBRIGATÓRIO preencher `ref_min` e `ref_max`. Se o documento não informar os limites de referência, utilize o seu conhecimento veterinário padrão ouro para a raça '{raca_pet}' e preencha os valores ideais.
+                        
+                        Formato esperado:
+                        {{
+                            "data": "AAAA-MM-DD",
+                            "medico": "Nome do Médico ou Clínica",
+                            "tipo_documento": "Receita, Exame, Atestado, Fatura ou Consulta",
+                            "resumo": "Resumo detalhado dos resultados",
+                            "parametros": {{
+                                "nome_do_parametro_aqui": {{
+                                    "valor": valor_numerico_do_paciente,
+                                    "unidade": "unidade (ex: mg/dL, U/L)",
+                                    "ref_min": valor_minimo_ideal,
+                                    "ref_max": valor_maximo_ideal
+                                }}
+                            }}
+                        }}
+                        Retorne APENAS o JSON válido, sem texto extra.
+                        """
                             
                             st.session_state.resumo_consultas = executar_ia_com_fallback(prompt_resumo, json_mode=False)
                             st.toast("Relatório completo gerado!", icon="🩺")
