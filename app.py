@@ -219,7 +219,13 @@ def construir_texto_relatorio(paciente, data_inicio, data_fim, incluir_resumo, i
                     except Exception:
                         params = {}
                 if isinstance(params, dict) and len(params) > 0:
-                    linhas.append(f"📊 Parâmetros: {json.dumps(params, ensure_ascii=False)}")
+                    linhas.append("📊 Parâmetros:")
+                    for k, v in params.items():
+                        if isinstance(v, dict) and "valor" in v:
+                            ref = f" (Ref: {v.get('ref_min')} a {v.get('ref_max')})" if v.get('ref_min') else ""
+                            linhas.append(f"   - {k}: {v['valor']} {v.get('unidade', '')}{ref}")
+                        else:
+                            linhas.append(f"   - {k}: {v}")
                 linhas.append("-" * 40)
         else:
             linhas.append("Nenhum registro encontrado no período selecionado.")
@@ -660,8 +666,9 @@ with tab4:
         df_dash['data'] = pd.to_datetime(df_dash['data'])
         df_dash = df_dash.sort_values(by="data")
         
-        lista_parametros = []
+        lista_parametros_valores = []
         datas_validas = []
+        dicionario_referencias = {} # Guarda as referências mais recentes para cada parâmetro
         
         for idx, row in df_dash.iterrows():
             params = row.get("parametros")
@@ -672,11 +679,28 @@ with tab4:
                     params = {}
                     
             if isinstance(params, dict) and len(params) > 0:
-                lista_parametros.append(params)
-                datas_validas.append(row["data"])
+                valores_simples = {}
+                for key, data_param in params.items():
+                    # Verifica se está no formato antigo (só número) ou novo (com valor, min, max)
+                    if isinstance(data_param, dict) and "valor" in data_param:
+                        valores_simples[key] = data_param["valor"]
+                        # Atualiza as referências com as do exame mais recente
+                        dicionario_referencias[key] = {
+                            "min": data_param.get("ref_min", 0.0),
+                            "max": data_param.get("ref_max", 0.0),
+                            "unid": data_param.get("unidade", "")
+                        }
+                    elif isinstance(data_param, (int, float)):
+                        valores_simples[key] = data_param
+                        if key not in dicionario_referencias:
+                            dicionario_referencias[key] = {"min": 0.0, "max": 0.0, "unid": ""}
                 
-        if lista_parametros:
-            df_plot = pd.DataFrame(lista_parametros)
+                if valores_simples:
+                    lista_parametros_valores.append(valores_simples)
+                    datas_validas.append(row["data"])
+                
+        if lista_parametros_valores:
+            df_plot = pd.DataFrame(lista_parametros_valores)
             df_plot.index = pd.to_datetime(datas_validas)
             df_plot = df_plot.sort_index()
             
@@ -689,15 +713,17 @@ with tab4:
                 if not df_serie.empty:
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    # --- VALORES DE REFERÊNCIA (NOVO) ---
-                    st.markdown("##### 📌 Faixa de Referência Normal (Opcional)")
+                    # Recupera as referências detetadas pela IA
+                    ref_sugerida = dicionario_referencias.get(param_selecionado, {})
+                    unid = ref_sugerida.get("unid", "")
+                    
+                    st.markdown("##### 📌 Faixa de Referência Normal (Pré-preenchida pela IA)")
                     col_ref1, col_ref2 = st.columns(2)
                     with col_ref1:
-                        ref_min = st.number_input("Valor Mínimo Saudável", value=0.0, step=0.1)
+                        ref_min = st.number_input("Valor Mínimo Saudável", value=float(ref_sugerida.get("min") or 0.0), step=0.1)
                     with col_ref2:
-                        ref_max = st.number_input("Valor Máximo Saudável", value=0.0, step=0.1)
+                        ref_max = st.number_input("Valor Máximo Saudável", value=float(ref_sugerida.get("max") or 0.0), step=0.1)
                     
-                    # --- CARTÕES DE INDICADORES ---
                     valor_atual = df_serie[param_selecionado].iloc[-1]
                     valor_anterior = df_serie[param_selecionado].iloc[-2] if len(df_serie) > 1 else None
                     data_atual_str = df_serie.index[-1].strftime('%d/%m/%Y')
@@ -705,21 +731,26 @@ with tab4:
                     st.markdown("---")
                     col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
                     
+                    # Mostra alerta se o valor atual estiver fora da referência
+                    alerta_fora = ""
+                    if ref_min < ref_max:
+                        if valor_atual < ref_min or valor_atual > ref_max:
+                            alerta_fora = " ⚠️ (Fora do Normal)"
+                    
                     with col_kpi1:
                         if valor_anterior is not None:
                             variacao = valor_atual - valor_anterior
-                            st.metric(label=f"Último Registo ({data_atual_str})", value=f"{valor_atual}", delta=f"{variacao:.2f}")
+                            st.metric(label=f"Último Registo ({data_atual_str})", value=f"{valor_atual} {unid}{alerta_fora}", delta=f"{variacao:.2f}")
                         else:
-                            st.metric(label=f"Último Registo ({data_atual_str})", value=f"{valor_atual}")
+                            st.metric(label=f"Último Registo ({data_atual_str})", value=f"{valor_atual} {unid}{alerta_fora}")
                             
                     with col_kpi2:
-                        st.metric(label="Máximo Histórico", value=f"{df_serie[param_selecionado].max()}")
+                        st.metric(label="Máximo Histórico", value=f"{df_serie[param_selecionado].max()} {unid}")
                     with col_kpi3:
-                        st.metric(label="Mínimo Histórico", value=f"{df_serie[param_selecionado].min()}")
+                        st.metric(label="Mínimo Histórico", value=f"{df_serie[param_selecionado].min()} {unid}")
                         
                     st.markdown("---")
                     
-                    # --- GRÁFICO INTERATIVO PLOTLY ---
                     fig = px.line(
                         df_serie, 
                         x=df_serie.index, 
@@ -736,12 +767,11 @@ with tab4:
                         textfont=dict(size=11, color="gray")
                     )
                     
-                    # Adicionar a faixa verde de referência se o utilizador preencheu
                     if ref_min < ref_max:
                         fig.add_hrect(
                             y0=ref_min, y1=ref_max, 
                             line_width=0, fillcolor="green", opacity=0.15,
-                            annotation_text="Faixa Normal", annotation_position="top right"
+                            annotation_text="Faixa Normal Saudável", annotation_position="top right"
                         )
                     
                     fig.update_layout(
@@ -749,7 +779,7 @@ with tab4:
                         plot_bgcolor="rgba(0,0,0,0)",
                         paper_bgcolor="rgba(0,0,0,0)",
                         xaxis_title="Data do Exame",
-                        yaxis_title="Valor Registado",
+                        yaxis_title=f"Valor Registado {f'({unid})' if unid else ''}",
                         xaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.2)'),
                         yaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.2)'),
                         margin=dict(l=20, r=20, t=50, b=20)
