@@ -677,13 +677,22 @@ with tab2:
                             
                         with col_del:
                             # Botão menor, sem use_container_width
-                            if st.button("🗑️ Apagar", key=f"excluir_{row['id']}", help="Marque a caixa ao lado para apagar"):
-                                if confirmar_del:
+
+
+
+                            # --- BOTÃO DE EXCLUSÃO (Um por baixo do outro) ---
+                            if st.button("🗑️ Apagar", key=f"excluir_{row['id']}", help="Marque a caixa abaixo para apagar"):
+                                # Como a checkbox está abaixo, usamos o session_state para verificar se está marcada
+                                if st.session_state.get(f"chk_{row['id']}", False):
                                     if excluir_registro(row['id']):
                                         st.toast("Registo apagado!", icon="🗑️")
                                         st.rerun()
                                 else:
-                                    st.warning("Marque 'Confirmar' 👈")
+                                    st.warning("Marque 'Confirmar' 👇")
+                                    
+                            # A checkbox de confirmação fica logo abaixo do botão
+                            confirmar_del = st.checkbox("Confirmar", key=f"chk_{row['id']}")
+
     else:
         st.info("O histórico está vazio. Adicione um novo registo!")
 
