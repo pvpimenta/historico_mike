@@ -676,7 +676,13 @@ with tab4:
         paciente_dash_sel = st.selectbox("🐶 Selecione o Paciente:", pacientes_dash, key="dash_paciente")
         df_dash = df_dash[df_dash["paciente"] == paciente_dash_sel]
         
-        df_dash['data'] = pd.to_datetime(df_dash['data'])
+        # Converte as datas com segurança (errors='coerce' transforma erros em nulos)
+        # dayfirst=True ajuda o sistema a entender que o padrão é Dia/Mês/Ano
+        df_dash['data'] = pd.to_datetime(df_dash['data'], errors='coerce', dayfirst=True)
+        
+        # Remove do gráfico qualquer registo que tenha ficado com a data inválida/nula
+        df_dash = df_dash.dropna(subset=['data'])
+        
         df_dash = df_dash.sort_values(by="data")
         
         lista_parametros_valores = []
