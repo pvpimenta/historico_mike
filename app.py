@@ -279,6 +279,26 @@ def gerar_pdf_bytes(texto_relatorio):
             
     return bytes(pdf.output())
 
+
+
+def atualizar_registro(id_registro, paciente, data, medico, tipo_documento, resumo, parametros):
+    try:
+        dados = {
+            "paciente": paciente,
+            "data": data,
+            "medico": medico,
+            "tipo_documento": tipo_documento,
+            "resumo": resumo,
+            "parametros": parametros
+        }
+        supabase.table("historico").update(dados).eq("id", id_registro).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao atualizar no Supabase: {e}")
+        return False
+
+
+
 # ==========================================
 # FUNÇÕES DO PERFIL (FOTO E DATA NASCIMENTO)
 # ==========================================
@@ -605,7 +625,8 @@ with tab2:
                     data_padrao_edit = datetime.date.today()
 
                 with st.container(border=True):
-                    col_texto, col_botoes = st.columns([4, 2])
+                    # Aumentei a proporção do texto para 5 e deixei 2 para os botões
+                    col_texto, col_botoes = st.columns([5, 2]) 
                     
                     with col_texto:
                         st.subheader(f"🗓️ {data_formatada} - {row['tipo_documento']}")
@@ -615,8 +636,8 @@ with tab2:
                     with col_botoes:
                         st.write("") 
                         
-                        # --- BOTÃO DE EDIÇÃO (POPOVER) ---
-                        with st.popover("✏️ Editar", use_container_width=True):
+                        # --- BOTÃO DE EDIÇÃO (Menor, sem use_container_width) ---
+                        with st.popover("✏️️ Editar"):
                             st.markdown(f"#### Editar Registo #{row['id']}")
                             with st.form(key=f"form_edit_{row['id']}"):
                                 nova_data = st.date_input("🗓️ Data", value=data_padrao_edit, format="DD/MM/YYYY", key=f"d_{row['id']}")
@@ -624,7 +645,6 @@ with tab2:
                                 novo_medico = st.text_input("👨‍⚕️ Médico / Clínica", value=str(row['medico']), key=f"m_{row['id']}")
                                 novo_resumo = st.text_area("📝 Resumo / Detalhes", value=str(row['resumo']), height=100, key=f"r_{row['id']}")
                                 
-                                # Tratamento dos Parâmetros
                                 params_atuais = row.get("parametros", {})
                                 if isinstance(params_atuais, str):
                                     try:
@@ -643,20 +663,27 @@ with tab2:
                                     except Exception:
                                         novos_params = params_atuais
                                         
-                                    # Chama a função de atualização (atualizar_registro)
                                     if atualizar_registro(row['id'], row['paciente'], str(nova_data), novo_medico, novo_tipo, novo_resumo, novos_params):
                                         st.toast("Registo atualizado com sucesso!", icon="✅")
                                         st.rerun()
 
-                        # --- BOTÃO DE EXCLUSÃO ---
-                        confirmar_del = st.checkbox("Confirmar", key=f"chk_{row['id']}")
-                        if st.button("🗑️ Apagar", key=f"excluir_{row['id']}", help="Marque a caixa ao lado para apagar", use_container_width=True):
-                            if confirmar_del:
-                                if excluir_registro(row['id']):
-                                    st.toast("Registo apagado!", icon="🗑️")
-                                    st.rerun()
-                            else:
-                                st.warning("Marque 'Confirmar' para apagar.")
+                        st.write("") # Espaço em branco para separar da exclusão
+
+                        # --- BOTÃO DE EXCLUSÃO (Checkbox lado a lado) ---
+                        col_chk, col_del = st.columns([1.2, 1]) # Sub-colunas
+                        
+                        with col_chk:
+                            confirmar_del = st.checkbox("Confirmar", key=f"chk_{row['id']}")
+                            
+                        with col_del:
+                            # Botão menor, sem use_container_width
+                            if st.button("🗑️ Apagar", key=f"excluir_{row['id']}", help="Marque a caixa ao lado para apagar"):
+                                if confirmar_del:
+                                    if excluir_registro(row['id']):
+                                        st.toast("Registo apagado!", icon="🗑️")
+                                        st.rerun()
+                                else:
+                                    st.warning("Marque 'Confirmar' 👈")
     else:
         st.info("O histórico está vazio. Adicione um novo registo!")
 
