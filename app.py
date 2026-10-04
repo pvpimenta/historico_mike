@@ -359,15 +359,15 @@ st.set_page_config(page_title="Relatório do Pet", page_icon="🐕", layout="cen
 # ==========================================
 with st.sidebar:
     with st.sidebar:
-    st.title("🐾 Perfil do Pet")
-    nome_perfil = st.text_input("Nome do Paciente", value="Mike", key="nome_perfil")
+        st.title("🐾 Perfil do Pet")
+        nome_perfil = st.text_input("Nome do Paciente", value="Mike", key="nome_perfil")
     
-    perfil_dados = carregar_perfil(nome_perfil)
-    raca_atual = perfil_dados.get("raca", "")
-    raca_input = st.text_input("🐕 Espécie / Raça", value=raca_atual, placeholder="Ex: Cão - Golden Retriever")
-    st.markdown("---")
-    foto_b64 = perfil_dados.get("foto_base64")
-    data_nasc_str = perfil_dados.get("data_nascimento")
+        perfil_dados = carregar_perfil(nome_perfil)
+        raca_atual = perfil_dados.get("raca", "")
+        raca_input = st.text_input("🐕 Espécie / Raça", value=raca_atual, placeholder="Ex: Cão - Golden Retriever")
+        st.markdown("---")
+        foto_b64 = perfil_dados.get("foto_base64")
+        data_nasc_str = perfil_dados.get("data_nascimento")
     
     if data_nasc_str:
         try:
