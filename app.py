@@ -535,6 +535,9 @@ with tab1:
 # ==========================================
 # SEPARADOR 2: HISTÓRICO
 # ==========================================
+# ==========================================
+# SEPARADOR 2: HISTÓRICO (Com Edição e Exclusão)
+# ==========================================
 with tab2:
     df = carregar_historico()
     
@@ -594,20 +597,60 @@ with tab2:
         else:
             for idx, row in df_filtrado.iterrows():
                 try:
-                    data_formatada = pd.to_datetime(row['data'], dayfirst=True).strftime('%d/%m/%Y')
+                    data_dt_obj = pd.to_datetime(row['data'], dayfirst=True)
+                    data_formatada = data_dt_obj.strftime('%d/%m/%Y')
+                    data_padrao_edit = data_dt_obj.date()
                 except Exception:
                     data_formatada = str(row['data'])
+                    data_padrao_edit = datetime.date.today()
 
                 with st.container(border=True):
-                    col_texto, col_botao = st.columns([5, 1.5])
+                    col_texto, col_botoes = st.columns([4, 2])
+                    
                     with col_texto:
                         st.subheader(f"🗓️ {data_formatada} - {row['tipo_documento']}")
                         st.markdown(f"**🏥 Clínica/Médico:** {row['medico']}")
                         st.markdown(f"**📝 Detalhes:** {row['resumo']}")
-                    with col_botao:
+                        
+                    with col_botoes:
                         st.write("") 
+                        
+                        # --- BOTÃO DE EDIÇÃO (POPOVER) ---
+                        with st.popover("✏️ Editar", use_container_width=True):
+                            st.markdown(f"#### Editar Registo #{row['id']}")
+                            with st.form(key=f"form_edit_{row['id']}"):
+                                nova_data = st.date_input("🗓️ Data", value=data_padrao_edit, format="DD/MM/YYYY", key=f"d_{row['id']}")
+                                novo_tipo = st.text_input("📄 Tipo de Documento", value=str(row['tipo_documento']), key=f"t_{row['id']}")
+                                novo_medico = st.text_input("👨‍⚕️ Médico / Clínica", value=str(row['medico']), key=f"m_{row['id']}")
+                                novo_resumo = st.text_area("📝 Resumo / Detalhes", value=str(row['resumo']), height=100, key=f"r_{row['id']}")
+                                
+                                # Tratamento dos Parâmetros
+                                params_atuais = row.get("parametros", {})
+                                if isinstance(params_atuais, str):
+                                    try:
+                                        params_atuais = json.loads(params_atuais)
+                                    except Exception:
+                                        params_atuais = {}
+                                
+                                params_txt = json.dumps(params_atuais, ensure_ascii=False, indent=2)
+                                novos_params_txt = st.text_area("📊 Parâmetros (JSON)", value=params_txt, key=f"p_{row['id']}")
+                                
+                                btn_salvar_edit = st.form_submit_button("💾 Guardar Alterações", use_container_width=True)
+                                
+                                if btn_salvar_edit:
+                                    try:
+                                        novos_params = json.loads(novos_params_txt)
+                                    except Exception:
+                                        novos_params = params_atuais
+                                        
+                                    # Chama a função de atualização (atualizar_registro)
+                                    if atualizar_registro(row['id'], row['paciente'], str(nova_data), novo_medico, novo_tipo, novo_resumo, novos_params):
+                                        st.toast("Registo atualizado com sucesso!", icon="✅")
+                                        st.rerun()
+
+                        # --- BOTÃO DE EXCLUSÃO ---
                         confirmar_del = st.checkbox("Confirmar", key=f"chk_{row['id']}")
-                        if st.button("🗑️ Apagar", key=f"excluir_{row['id']}", help="Marque a caixa ao lado para apagar"):
+                        if st.button("🗑️ Apagar", key=f"excluir_{row['id']}", help="Marque a caixa ao lado para apagar", use_container_width=True):
                             if confirmar_del:
                                 if excluir_registro(row['id']):
                                     st.toast("Registo apagado!", icon="🗑️")
@@ -1059,40 +1102,96 @@ with tab6:
 # SEPARADOR 7: ASSISTENTE IA & DÚVIDAS VETERINÁRIAS
 # ==========================================
 with tab7:
-    st.markdown("### 💬 Assistente IA Veterinário")
-    st.write("Tire dúvidas sobre sintomas, alimentação permitida/proibida, cuidados gerais e comportamento do seu pet.")
+    st.markdown("### 🥩 Histórico Alimentar e Nutrição")
+    st.write("Registe a dieta do paciente fotografando os **Níveis de Garantia** da embalagem da ração.")
+    
+    # 1. Seleção do Paciente
+    df_pacientes = carregar_historico()
+    lista_pacientes = list(df_pacientes["paciente"].unique()) if not df_pacientes.empty else []
+    
+    paciente_nutri = st.selectbox("🐶 Selecione o Paciente:", lista_pacientes + ["Outro..."], key="nutri_paciente")
+    if paciente_nutri == "Outro...":
+        paciente_nutri = st.text_input("Digite o nome do paciente:")
 
-    if "chat_mensagens" not in st.session_state:
-        st.session_state.chat_mensagens = [
-            {"role": "assistant", "content": f"Olá! Sou o seu assistente de saúde para o **{nome_perfil}**. Como posso ajudar hoje? Pode perguntar-me sobre remédios, sintomas, alimentos proibidos ou dúvidas gerais de cuidados."}
-        ]
+    st.markdown("---")
+    
+    # 2. Captura da Imagem (Câmera ou Upload)
+    col_cam, col_up = st.columns(2)
+    with col_cam:
+        foto_camera = st.camera_input("📸 Tirar foto do rótulo")
+    with col_up:
+        foto_upload = st.file_uploader("📂 Ou envie uma foto", type=["jpg", "jpeg", "png"])
+        
+    imagem_rotulo = foto_camera or foto_upload
 
-    for msg in st.session_state.chat_mensagens:
-        with st.chat_message(msg["role"]):
-            st.write(msg["content"])
-
-    if prompt_usuario := st.chat_input("Ex: Posso dar maçã ao meu cão? O que significa prostrado?"):
-        st.session_state.chat_mensagens.append({"role": "user", "content": prompt_usuario})
-        with st.chat_message("user"):
-            st.write(prompt_usuario)
-
-        with st.chat_message("assistant"):
-            with st.spinner("A consultar conhecimentos veterinários..."):
-                if tem_gemini or tem_groq:
-                    prompt_chat = f"""
-                    Você é um assistente virtual veterinário amigável, atencioso e rigoroso.
-                    DADOS DO PACIENTE:
-                    - Nome: {nome_perfil}
-
-                    PERGUNTA DO TUTOR:
-                    {prompt_usuario}
-
-                    Forneça uma resposta clara, objetiva e útil em português. 
-                    Se for uma emergência médica (dificuldade respiratória, convulsão, envenenamento), recomende explicitamente procurar uma clínica veterinária imediatamente.
-                    """
-                    resposta_ia = executar_ia_com_fallback(prompt_chat, json_mode=False)
-                else:
-                    resposta_ia = "⚠️ As chaves da IA não estão configuradas nos Secrets. Por favor, adicione a chave do Gemini ou Groq para utilizar o assistente."
-
-                st.write(resposta_ia)
-                st.session_state.chat_mensagens.append({"role": "assistant", "content": resposta_ia})
+    # 3. Processamento da IA (Visão)
+    if imagem_rotulo is not None:
+        st.image(imagem_rotulo, caption="Rótulo Capturado", use_container_width=True)
+        
+        if st.button("🧠 Analisar Composição Nutricional", type="primary", use_container_width=True):
+            with st.spinner("A ler o rótulo e a procurar informações da marca..."):
+                
+                # Preparamos o prompt multimodal
+                prompt_visao = """
+                Aja como um nutrólogo veterinário. Leia esta imagem do rótulo de uma ração para pets.
+                Extraia as seguintes informações e retorne EXCLUSIVAMENTE um JSON com esta estrutura:
+                {
+                    "marca": "Nome da marca ou linha (ex: Royal Canin Renal, Premier Ambientes Internos)",
+                    "tipo": "Seca ou Húmida",
+                    "proteina_bruta_percentual": 0.0,
+                    "extrato_etereo_percentual": 0.0,
+                    "fosforo_percentual": 0.0,
+                    "sodio_percentual": 0.0,
+                    "calcio_percentual": 0.0,
+                    "ingredientes_principais": "Lista curta dos 3 primeiros ingredientes",
+                    "indicacao": "Se houver (ex: Filhotes, Renal, Obesidade, etc)"
+                }
+                Se a imagem não for de um rótulo ou algum valor não estiver presente, use 0.0 para números e "Não identificado" para textos.
+                """
+                
+                try:
+                    import google.generativeai as genai
+                    from PIL import Image
+                    import json
+                    
+                    # Convertendo a imagem do Streamlit para o formato PIL que o Gemini aceita
+                    img_pil = Image.open(imagem_rotulo)
+                    
+                    # Chamada direta ao modelo Gemini 1.5 Flash (o mais rápido para visão)
+                    modelo_visao = genai.GenerativeModel('gemini-1.5-flash')
+                    resposta_visao = modelo_visao.generate_content([prompt_visao, img_pil])
+                    
+                    # Limpeza do JSON (remove as crases que o markdown da IA às vezes adiciona)
+                    texto_json = resposta_visao.text.replace("```json", "").replace("```", "").strip()
+                    dados_dieta = json.loads(texto_json)
+                    
+                    # Guarda na memória temporária para a etapa de confirmação
+                    st.session_state['dados_dieta_temp'] = dados_dieta
+                    
+                except Exception as e:
+                    st.error(f"Erro ao analisar a imagem: {e}")
+                    
+    # 4. Confirmação e Registo
+    if 'dados_dieta_temp' in st.session_state:
+        st.success("✅ Rótulo lido com sucesso! Verifique os dados abaixo:")
+        dados = st.session_state['dados_dieta_temp']
+        
+        # Exibição bonita num cartão
+        with st.container(border=True):
+            st.markdown(f"#### 🍲 {dados.get('marca', 'Marca Indefinida')}")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Proteína Bruta", f"{dados.get('proteina_bruta_percentual', 0)}%")
+            col2.metric("Gordura (Extrato Etéreo)", f"{dados.get('extrato_etereo_percentual', 0)}%")
+            col3.metric("Fósforo", f"{dados.get('fosforo_percentual', 0)}%")
+            
+            st.write(f"**Indicação:** {dados.get('indicacao', 'Geral')}")
+            st.write(f"**Ingredientes base:** {dados.get('ingredientes_principais', 'N/A')}")
+            
+        if st.button("💾 Salvar Histórico Alimentar", use_container_width=True):
+            # Salva na memória do paciente para a Análise Cruzada conseguir ler
+            st.session_state[f"dieta_{paciente_nutri}"] = dados 
+            
+            st.balloons()
+            st.success(f"Dieta de {paciente_nutri} atualizada no sistema!")
+            del st.session_state['dados_dieta_temp'] # Limpa a tela após salvar
+            st.rerun() # Dá refresh para voltar ao estado inicial
