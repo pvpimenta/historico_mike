@@ -272,7 +272,7 @@ def gerar_pdf_bytes(texto_relatorio):
             
         # Títulos principais maiores para destacar bem no telemóvel (Tamanho 16)
         if "RELATORIO CLINICO" in linha_str or "RELATÓRIO CLÍNICO" in linha_str:
-            pdf.set_font("Helvetica", style="B", size=16)
+            pdf.set_font("Helvetica", style="B", size=14)
             try:
                 # Altura da linha aumentada para 8
                 pdf.cell(pdf.epw, 8, linha_str, align="C", new_x="LMARGIN", new_y="NEXT")
@@ -284,7 +284,7 @@ def gerar_pdf_bytes(texto_relatorio):
         # Subtítulos (Tamanho 14 para manter a hierarquia clara)
         elif "RESUMO CLINICO" in linha_str or "HISTORICO DE REGISTROS" in linha_str:
             pdf.ln(2)
-            pdf.set_font("Helvetica", style="B", size=14)
+            pdf.set_font("Helvetica", style="B", size=12)
             try:
                 # Altura da linha aumentada para 7
                 pdf.multi_cell(pdf.epw, 7, linha_str)
