@@ -36,9 +36,7 @@ supabase: Client = create_client(supabase_url, supabase_key)
 # ==========================================
 # PROVEDORES DE IA E SISTEMA DE FALLBACK
 # ==========================================
-# ==========================================
-# PROVEDORES DE IA E SISTEMA DE FALLBACK
-# ==========================================
+
 
 def _chamar_gemini(prompt, json_mode=False):
     api_key = st.secrets.get("GEMINI_API_KEY")
@@ -425,18 +423,20 @@ if not (tem_gemini or tem_groq):
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📝 Adicionar Registo", 
     "🗂️ Histórico", 
     "⏰ Lembretes", 
     "📊 Dashboard", 
     "🩺 Consultas",
-    "💊 Medicamentos"
+    "💊 Medicamentos",
+    "🥩 Nutrição"
 ])
 
-# ------------------------------------------
+
+# ==========================================
 # SEPARADOR 1: NOVO REGISTO
-# ------------------------------------------
+# ==========================================
 with tab1:
     st.markdown("### 📸 Digitalizar Documento")
     nome_paciente = st.text_input("👤 Nome do Paciente / Pet:", value=nome_perfil)
@@ -459,7 +459,6 @@ with tab1:
         if st.button("✨ Ler com Inteligência Artificial", use_container_width=True, type="primary"):
             with st.spinner("Extraindo texto e analisando com a IA..."):
                 try:
-                    # 1. Extração Local
                     if arquivo_upload.type == "application/pdf":
                         texto_extraido = extrair_texto_pdf(arquivo_upload)
                     else:
@@ -468,7 +467,6 @@ with tab1:
                     if not texto_extraido.strip():
                         st.warning("Não foi possível extrair nenhum texto legível desse arquivo.")
                     else:
-                        # 2. Envia APENAS o texto com Fallback Automático
                         prompt = f"""
                         Você é um assistente veterinário. Leia o seguinte texto extraído (via OCR) de um documento médico:
                         
@@ -499,15 +497,18 @@ with tab1:
             
             dados = st.session_state.dados_ia
             
+            # Tratamento flexível da data (suporta ISO AAAA-MM-DD e DD-MM-AAAA)
             try:
-                data_padrao = datetime.datetime.strptime(dados.get("data", ""), "%d-%m-%Y").date()
+                raw_data = dados.get("data", "")
+                data_parsed = pd.to_datetime(raw_data, dayfirst=True, errors='coerce')
+                data_padrao = data_parsed.date() if not pd.isna(data_parsed) else datetime.date.today()
             except Exception:
                 data_padrao = datetime.date.today()
 
             with st.form("form_confirmacao"):
                 col_data, col_tipo = st.columns(2)
                 with col_data:
-                    data_final = st.date_input("🗓️ Data do Registo", value=data_padrao)
+                    data_final = st.date_input("🗓️ Data do Registo", value=data_padrao, format="DD/MM/YYYY")
                 with col_tipo:
                     tipo_final = st.text_input("📄 Tipo de Documento", value=dados.get("tipo_documento", ""))
                 
@@ -531,9 +532,9 @@ with tab1:
                         st.toast("Registo guardado com sucesso!", icon="🎉")
                         st.rerun()
 
-# ------------------------------------------
+# ==========================================
 # SEPARADOR 2: HISTÓRICO
-# ------------------------------------------
+# ==========================================
 with tab2:
     df = carregar_historico()
     
@@ -549,7 +550,10 @@ with tab2:
             ordem_ordem = st.selectbox("⏳ Ordem:", ["Cronológica (Mais antigo)", "Recentes Primeiro"])
             
         ordem_asc = (ordem_ordem == "Cronológica (Mais antigo)")
-        df_filtrado = df[df["paciente"] == paciente_sel].sort_values(by="data", ascending=ordem_asc)
+        
+        # Normalização de datas para ordenação
+        df['data_dt'] = pd.to_datetime(df['data'], errors='coerce', dayfirst=True)
+        df_filtrado = df[df["paciente"] == paciente_sel].sort_values(by="data_dt", ascending=ordem_asc)
         
         if busca:
             df_filtrado = df_filtrado[
@@ -563,7 +567,7 @@ with tab2:
         col_met1.metric("Registos", len(df_filtrado))
         col_met2.metric("Locais/Clínicas", df_filtrado['medico'].nunique())
         
-        csv = df_filtrado.to_csv(index=False).encode('utf-8')
+        csv = df_filtrado.drop(columns=['data_dt'], errors='ignore').to_csv(index=False).encode('utf-8')
         json_backup = gerar_backup_json()
         
         with col_met3:
@@ -578,7 +582,7 @@ with tab2:
                 st.download_button(
                     label="🛡️ Backup (JSON)",
                     data=json_backup,
-                    file_name=f"backup_completo_{datetime.date.today()}.json",
+                    file_name=f"backup_completo_{datetime.date.today().strftime('%d_%m_%Y')}.json",
                     mime="application/json",
                     use_container_width=True
                 )
@@ -589,16 +593,14 @@ with tab2:
             st.warning("Nenhum registo encontrado com essa palavra.")
         else:
             for idx, row in df_filtrado.iterrows():
-                # Converte a data para o formato DD/MM/AAAA
                 try:
-                    data_formatada = pd.to_datetime(row['data']).strftime('%d/%m/%Y')
-                except:
-                    data_formatada = row['data']
+                    data_formatada = pd.to_datetime(row['data'], dayfirst=True).strftime('%d/%m/%Y')
+                except Exception:
+                    data_formatada = str(row['data'])
 
                 with st.container(border=True):
                     col_texto, col_botao = st.columns([5, 1.5])
                     with col_texto:
-                        # Usa a nova data_formatada aqui no subheader
                         st.subheader(f"🗓️ {data_formatada} - {row['tipo_documento']}")
                         st.markdown(f"**🏥 Clínica/Médico:** {row['medico']}")
                         st.markdown(f"**📝 Detalhes:** {row['resumo']}")
@@ -615,9 +617,9 @@ with tab2:
     else:
         st.info("O histórico está vazio. Adicione um novo registo!")
 
-# ------------------------------------------
+# ==========================================
 # SEPARADOR 3: LEMBRETES
-# ------------------------------------------
+# ==========================================
 with tab3:
     st.subheader(f"🐾 Lembretes para o {nome_perfil}")
     st.write("Agende a troca da coleira, vacinas ou medicamentos.")
@@ -628,7 +630,7 @@ with tab3:
             
             col_d, col_h = st.columns(2)
             with col_d:
-                data_lembrete = st.date_input("🗓️ Data",format="DD/MM/YYYY")
+                data_lembrete = st.date_input("🗓️ Data", value=datetime.date.today(), format="DD/MM/YYYY")
             with col_h:
                 hora_lembrete = st.time_input("⏰ Horário", value=datetime.time(12, 0))
                 
@@ -650,7 +652,6 @@ with tab3:
                 link_gcal = f"https://www.google.com/calendar/render?action=TEMPLATE&text={titulo}&dates={inicio}/{inicio}&details={detalhes}"
                 
                 st.toast("Lembrete salvo no histórico!", icon="✅")
-                
                 st.info("Registo guardado! Clique no botão abaixo para ativar o alarme no seu telemóvel:")
                 st.markdown(f"""
                 <a href="{link_gcal}" target="_blank" style="background-color:#4285F4; color:white; padding:10px 20px; text-decoration:none; border-radius:8px; display:block; text-align:center; font-weight:bold; font-size:16px;">
@@ -660,15 +661,12 @@ with tab3:
             else:
                 st.warning("Por favor, preencha o nome do medicamento ou coleira.")
 
-
-
-# ------------------------------------------
+# ==========================================
 # SEPARADOR 4: DASHBOARD COM PARÂMETROS NORMAIS
-# ------------------------------------------
+# ==========================================
 with tab4:
     st.markdown("### 📈 Painel Clínico Avançado")
 
-    
     df_dash = carregar_historico()
     
     if not df_dash.empty and "parametros" in df_dash.columns:
@@ -676,14 +674,8 @@ with tab4:
         paciente_dash_sel = st.selectbox("🐶 Selecione o Paciente:", pacientes_dash, key="dash_paciente")
         df_dash = df_dash[df_dash["paciente"] == paciente_dash_sel]
         
-        # Converte as datas com segurança (errors='coerce' transforma erros em nulos)
-        # dayfirst=True ajuda o sistema a entender que o padrão é Dia/Mês/Ano
         df_dash['data'] = pd.to_datetime(df_dash['data'], errors='coerce', dayfirst=True)
-        
-        # Remove do gráfico qualquer registo que tenha ficado com a data inválida/nula
         df_dash = df_dash.dropna(subset=['data'])
-        
-        df_dash = df_dash.sort_values(by="data")
         
         lista_parametros_valores = []
         datas_validas = []
@@ -734,19 +726,15 @@ with tab4:
                     original_min = float(ref_sugerida.get("min") or 0.0)
                     original_max = float(ref_sugerida.get("max") or 0.0)
                     
-                    # --- NOVIDADE: PREENCHIMENTO AUTOMÁTICO VIA IA ---
                     cache_key = f"ia_ref_{param_selecionado}"
                     
-                    # Se não vieram referências do exame, pedimos à IA para preencher
                     if original_min == 0.0 and original_max == 0.0:
                         if cache_key not in st.session_state:
                             with st.spinner(f"🤖 A IA está a procurar os valores de referência padrão para '{param_selecionado}'..."):
                                 prompt_ref = f"Forneça a faixa de referência saudável padrão na medicina veterinária (cães/gatos) para o exame '{param_selecionado}'. Retorne APENAS um JSON no formato exato: {{\"min\": 10.5, \"max\": 25.0, \"unid\": \"mg/dL\"}}. Não inclua texto explicativo, formatação markdown ou crases, apenas o objeto JSON."
-                                
                                 resposta_ia = executar_ia_com_fallback(prompt_ref, json_mode=True)
                                 
                                 try:
-                                    # Limpar formatação caso a IA teime em mandar markdown
                                     if isinstance(resposta_ia, str):
                                         resposta_ia = resposta_ia.replace("```json", "").replace("```", "").strip()
                                         dados_ia = json.loads(resposta_ia)
@@ -759,18 +747,14 @@ with tab4:
                                         "unid": dados_ia.get("unid", unid)
                                     }
                                 except Exception:
-                                    # Se a IA falhar em gerar o JSON corretamente, mantém a zeros
                                     st.session_state[cache_key] = {"min": 0.0, "max": 0.0, "unid": unid}
                         
-                        # Recupera os valores preenchidos pela IA da memória
                         valores_atuais_ref = st.session_state[cache_key]
                         original_min = valores_atuais_ref["min"]
                         original_max = valores_atuais_ref["max"]
                         if not unid:
                             unid = valores_atuais_ref["unid"]
-                    # -------------------------------------------------
                     
-                    # 1. Configurações num Expander discreto para não poluir a tela
                     with st.expander("⚙️ Ajustar Faixa de Referência"):
                         if cache_key in st.session_state and (original_min > 0 or original_max > 0):
                             st.caption("✨ Valores sugeridos automaticamente pela Inteligência Artificial.")
@@ -785,22 +769,19 @@ with tab4:
                     valor_anterior = df_serie[param_selecionado].iloc[-2] if len(df_serie) > 1 else None
                     data_atual_str = df_serie.index[-1].strftime('%d/%m/%Y')
                     
-                    # Tratamento inteligente da unidade (esconde os parênteses se não houver unidade)
                     texto_unidade = f" ({unid})" if unid.strip() else ""
                     sufixo_gauge = f" {unid}" if unid.strip() else ""
 
-                    # 2. Visão Atual (Mobile First)
                     st.markdown("<br>", unsafe_allow_html=True)
                     col_info, col_gauge = st.columns([1.2, 1], gap="medium")
                     
                     with col_info:
-                        st.markdown(f"#### 🩺 Estado Atual")
+                        st.markdown("#### 🩺 Estado Atual")
                         if valor_anterior is not None:
                             st.metric(label=f"Exame de {data_atual_str}", value=f"{valor_atual}{sufixo_gauge}", delta=f"{valor_atual - valor_anterior:.2f} (vs anterior)")
                         else:
                             st.metric(label=f"Exame de {data_atual_str}", value=f"{valor_atual}{sufixo_gauge}")
                             
-                        # Alertas visuais claros
                         if ref_min == 0.0 and ref_max == 0.0:
                             st.info("ℹ️ Ajuste a 'Faixa de Referência' acima para ver a análise automática.")
                         elif valor_atual < ref_min:
@@ -815,7 +796,7 @@ with tab4:
                         fig_gauge = go.Figure(go.Indicator(
                             mode = "gauge+number",
                             value = valor_atual,
-                            number = {'suffix': sufixo_gauge, 'font': {'size': 26}}, # Aplica o sufixo limpo
+                            number = {'suffix': sufixo_gauge, 'font': {'size': 26}},
                             gauge = {
                                 'axis': {'range': [0, limite_max_grafico], 'tickwidth': 1},
                                 'bar': {'color': "rgba(0,0,0,0)"}, 
@@ -835,20 +816,14 @@ with tab4:
                         st.plotly_chart(fig_gauge, use_container_width=True)
 
                     st.markdown("---")
-                    
-                    # 3. Gráfico Histórico Premium (Estilo Apple Health)
                     st.markdown(f"#### 📈 Evolução de **{param_selecionado.upper()}**")
                     
-                    fig_line = px.line(
-                        df_serie, x=df_serie.index, y=param_selecionado, markers=True
-                    )
-                    
-                    # Linha curva (spline), marcadores bonitos e preenchimento sombreado por baixo
+                    fig_line = px.line(df_serie, x=df_serie.index, y=param_selecionado, markers=True)
                     fig_line.update_traces(
                         line=dict(color="#2E86C1", width=4, shape="spline"), 
                         marker=dict(size=10, color="#1B4F72", line=dict(width=2, color="white")),
                         fill='tozeroy', 
-                        fillcolor="rgba(46, 134, 193, 0.15)" # Sombra azulada elegante
+                        fillcolor="rgba(46, 134, 193, 0.15)"
                     )
                     
                     if ref_min < ref_max:
@@ -858,7 +833,6 @@ with tab4:
                             annotation_font_color="green"
                         )
                         
-                    # Remove grelhas verticais para um aspeto mais limpo e aplica o texto_unidade corrigido
                     fig_line.update_layout(
                         xaxis_title="", 
                         yaxis_title=f"Valor{texto_unidade}", 
@@ -866,15 +840,13 @@ with tab4:
                         hovermode="x unified",
                         xaxis=dict(showgrid=False),
                         yaxis=dict(showgrid=True, gridcolor="rgba(200, 200, 200, 0.2)"),
-                        plot_bgcolor="rgba(0,0,0,0)", # Fundo transparente
+                        plot_bgcolor="rgba(0,0,0,0)",
                         paper_bgcolor="rgba(0,0,0,0)"
                     )
                     
                     st.plotly_chart(fig_line, use_container_width=True)
 
                     st.markdown("---")
-                    
-                    # 4. Detalhes em Abas (Poupa espaço imenso em telas pequenas)
                     tab_kpis, tab_dados, tab_ia = st.tabs(["📊 Máx & Mín", "📅 Tabela Bruta", "🧠 Ajuda da IA"])
                     
                     with tab_kpis:
@@ -901,11 +873,9 @@ with tab4:
         else:
             st.info("Nenhum parâmetro numérico foi extraído nos registos deste paciente ainda.")
 
-
-        
-# ------------------------------------------
+# ==========================================
 # SEPARADOR 5: CONSULTAS E RELATÓRIO DA IA
-# ------------------------------------------
+# ==========================================
 with tab5:
     st.markdown("### 🩺 Histórico de Consultas Veterinárias")
     st.write("Registe o que foi falado nas consultas e gere um resumo inteligente com a IA (Consultas, Exames e Medicações).")
@@ -915,7 +885,7 @@ with tab5:
         with st.form("form_consulta"):
             col_c1, col_c2 = st.columns(2)
             with col_c1:
-                data_consulta = st.date_input("🗓️ Data da Consulta", value=datetime.date.today())
+                data_consulta = st.date_input("🗓️ Data da Consulta", value=datetime.date.today(), format="DD/MM/YYYY")
             with col_c2:
                 medico_consulta = st.text_input("👨‍⚕️ Veterinário / Clínica", value="Dr. Veterinário")
             
@@ -942,11 +912,10 @@ with tab5:
         if not df_consultas.empty:
             st.subheader(f"📋 Registo das Consultas ({len(df_consultas)})")
             for idx, row in df_consultas.iterrows():
-                # Converte a data para o formato DD/MM/AAAA
                 try:
-                    data_formatada = pd.to_datetime(row['data']).strftime('%d/%m/%Y')
-                except:
-                    data_formatada = row['data']
+                    data_formatada = pd.to_datetime(row['data'], dayfirst=True).strftime('%d/%m/%Y')
+                except Exception:
+                    data_formatada = str(row['data'])
                     
                 with st.expander(f"🗓️ {data_formatada} — {row['medico']}"):
                     st.markdown(f"**Relato:** {row['resumo']}")
@@ -963,26 +932,28 @@ with tab5:
                             
                             texto_historico = ""
                             for _, r in df_pet_completo.iterrows():
-                                texto_historico += f"- Data: {r['data']} | Tipo: {r['tipo_documento']} | Vet/Clínica: {r['medico']}\n"
+                                try:
+                                    dt_fmt = pd.to_datetime(r['data'], dayfirst=True).strftime('%d/%m/%Y')
+                                except Exception:
+                                    dt_fmt = str(r['data'])
+                                    
+                                texto_historico += f"- Data: {dt_fmt} | Tipo: {r['tipo_documento']} | Vet/Clínica: {r['medico']}\n"
                                 texto_historico += f"  Detalhes/Doses: {r['resumo']}\n"
                                 
                                 params = r.get("parametros")
                                 if isinstance(params, str):
                                     try:
                                         params = json.loads(params)
-                                    except:
+                                    except Exception:
                                         params = {}
                                 
-                                # ... (código anterior do for loop do texto_historico) ...
                                 if isinstance(params, dict) and len(params) > 0:
                                     texto_historico += f"  Parâmetros do Exame: {json.dumps(params, ensure_ascii=False)}\n"
                                 texto_historico += "\n"
                             
-                            # 1. Definir os dados do pet usando as variáveis da Sidebar
-                            idade_pet = calcular_idade(data_nasc_input) if data_nasc_input else "idade desconhecida"
-                            raca_pet = raca_input if raca_input else "espécie desconhecida"
+                            idade_pet = calcular_idade(data_nasc_input) if 'data_nasc_input' in locals() and data_nasc_input else "idade desconhecida"
+                            raca_pet = raca_input if 'raca_input' in locals() and raca_input else "espécie desconhecida"
 
-                            # 2. Criar o prompt_resumo focado no Relatório Clínico
                             prompt_resumo = f"""
                             Você é um médico veterinário experiente. Analise o seguinte histórico médico do paciente e crie um relatório clínico geral, claro e estruturado.
                             
@@ -1000,7 +971,6 @@ with tab5:
                             Formate a resposta de forma bonita e profissional usando Markdown.
                             """
                             
-                            # 3. Executar a IA (Note que passamos prompt_resumo e json_mode=False)
                             st.session_state.resumo_consultas = executar_ia_com_fallback(prompt_resumo, json_mode=False)
                             st.toast("Relatório completo gerado!", icon="🩺")
                         except Exception as e:
@@ -1008,141 +978,121 @@ with tab5:
                 else:
                     st.error("Nenhuma chave de IA configurada nos Secrets.")
 
-            if st.session_state.resumo_consultas:
+            if st.session_state.get("resumo_consultas"):
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.info(st.session_state.resumo_consultas)
 
-# ------------------------------------------
-# SEPARADOR 6: MEDICAMENTOS (NOVA ABA)
-# ------------------------------------------
+# ==========================================
+# SEPARADOR 6: MEDICAMENTOS
+# ==========================================
 with tab6:
     st.markdown("### 💊 Gestão de Medicamentos")
-    st.write("Adicione remédios contínuos, desparasitantes ou tratamentos temporários.")
+    st.write("Adicione remédios contínuos, desparasitantes ou tratamentos temporários para o pet.")
     
     with st.container(border=True):
-        st.subheader("➕ Adicionar Novo Medicamento")
+        st.subheader("➕ Adicionar Medicamento / Tratamento")
         with st.form("form_medicamento"):
-            nome_med = st.text_input("Nome do Medicamento (Ex: Apoquel, Bravecto, Insulina)")
+            col_med1, col_med2 = st.columns(2)
+            with col_med1:
+                nome_remedio = st.text_input("💊 Nome do Medicamento / Vacina / Desparasitante:", placeholder="Ex: Apoquel, Simparic, Amoxicilina")
+                dosagem = st.text_input("📏 Dosagem e Frequência:", placeholder="Ex: 1 comprimido de 12h em 12h")
+            with col_med2:
+                tipo_uso = st.selectbox("🏷️ Tipo de Uso:", ["Tratamento Temporário", "Uso Contínuo", "Desparasitante / Antipulgas", "Vacina"])
+                prescrito_por = st.text_input("👨‍⚕️ Prescrito Por / Clínica:", value="Veterinário Responsável")
+
+            col_d1, col_d2 = st.columns(2)
+            with col_d1:
+                data_inicio = st.date_input("🗓️ Data de Início / Aplicação", value=datetime.date.today(), format="DD/MM/YYYY")
+            with col_d2:
+                duracao = st.text_input("⏳ Duração do Tratamento:", placeholder="Ex: 7 dias, Contínuo, Anual")
+
+            obs_med = st.text_area("📝 Instruções / Observações:", placeholder="Ex: Dar com o alimento, conservar na frigorífico.")
             
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                dose_med = st.text_input("Dose (Ex: 1 comprimido, 5ml, 2 UI)")
-            with col_m2:
-                freq_med = st.text_input("Frequência (Ex: A cada 12h, 1x ao mês)")
-                
-            # Define o formato europeu (DD/MM/YYYY) na interface de seleção
-            data_inicio = st.date_input(
-                "Data de Início do Tratamento", 
-                value=datetime.date.today(),
-                format="DD/MM/YYYY"
-            )
-            
-            if st.form_submit_button("Guardar Medicamento", use_container_width=True):
-                if nome_med and dose_med:
-                    resumo_med = f"Medicamento: {nome_med} | Dose: {dose_med} | Frequência: {freq_med}"
-                    
-                    # Converte a data para o formato DD/MM/YYYY antes de guardar no banco
-                    data_formatada = data_inicio.strftime("%d/%m/%Y")
-                    
-                    salvar_registro(nome_perfil, data_formatada, "Prescrição / Casa", "Medicamento", resumo_med, {})
-                    st.toast("Medicamento adicionado ao histórico!", icon="✅")
-                    st.rerun()
+            btn_salvar_med = st.form_submit_button("💊 Guardar Medicamento", use_container_width=True)
+
+            if btn_salvar_med:
+                if nome_remedio.strip():
+                    resumo_formatado = f"Remédio: {nome_remedio} | Dose: {dosagem} | Uso: {tipo_uso} | Duração: {duracao} | Obs: {obs_med}"
+                    if salvar_registro(nome_perfil, str(data_inicio), prescrito_por, "Medicamento", resumo_formatado, {}):
+                        st.toast("Medicamento guardado no histórico!", icon="💊")
+                        st.rerun()
                 else:
-                    st.warning("Por favor, preencha pelo menos o Nome e a Dose do medicamento.")
-                    
+                    st.warning("Por favor, introduza o nome do medicamento.")
+
     st.markdown("---")
+    st.subheader(f"📋 Tratamentos Registados ({nome_perfil})")
     
-    # Mostrar lista de medicamentos já guardados
-    try:
-        df_historico_med = carregar_historico()
-        if not df_historico_med.empty:
-            df_meds = df_historico_med[
-                (df_historico_med["paciente"] == nome_perfil) & 
-                (df_historico_med["tipo_documento"] == "Medicamento")
-            ].sort_values(by="data", ascending=False)
-            
-            if not df_meds.empty:
-                st.subheader(f"📋 Lista de Medicações Registadas ({len(df_meds)})")
-                for _, row in df_meds.iterrows():
-                    with st.container(border=True):
-                        # Garante que registros antigos (salvos em AAAA-MM-DD) também sejam exibidos em DD/MM/YYYY
-                        try:
-                            data_exibicao = pd.to_datetime(row['data']).strftime("%d/%m/%Y")
-                        except Exception:
-                            data_exibicao = row['data']
+    df_meds = carregar_historico()
+    if not df_meds.empty:
+        df_meds_filtrado = df_meds[
+            (df_meds["paciente"] == nome_perfil) & 
+            (df_meds["tipo_documento"].str.contains("Medicamento", case=False, na=False))
+        ].sort_values(by="data", ascending=False)
 
-                        st.markdown(f"**🗓️ Início:** {data_exibicao}")
-                        st.markdown(f"**💊 Detalhes:** {row['resumo']}")
-            else:
-                st.info("Ainda não há medicamentos registados para este pet.")
-    except Exception as e:
-        pass
-        
-      
-            
-        st.markdown("---")
+        if not df_meds_filtrado.empty:
+            for idx, row in df_meds_filtrado.iterrows():
+                try:
+                    data_fmt = pd.to_datetime(row['data'], dayfirst=True).strftime('%d/%m/%Y')
+                except Exception:
+                    data_fmt = str(row['data'])
 
-        st.markdown("### 📄 Exportar Relatório para o Veterinário")
-        st.write("Selecione o período e o conteúdo para gerar um documento pronto para enviar ao médico.")
-
-        with st.container(border=True):
-            col_dt1, col_dt2 = st.columns(2)
-            with col_dt1:
-                dt_inicio = st.date_input("🗓️ Data Inicial", value=datetime.date.today() - datetime.timedelta(days=90))
-            with col_dt2:
-                dt_fim = st.date_input("🗓️ Data Final", value=datetime.date.today())
-
-            todo_historico = st.checkbox("📅 Selecionar Todo o Histórico (Ignorar Intervalo de Datas)")
-
-            conteudo_opcao = st.radio(
-                "O que deseja incluir no relatório?",
-                ["Resumo da IA + Histórico Detalhado", "Apenas Resumo da IA", "Apenas Histórico Detalhado"],
-                horizontal=True
-            )
-
-            df_pet = df_todas[df_todas["paciente"] == nome_perfil].copy()
-            df_pet['data_dt'] = pd.to_datetime(df_pet['data'], errors='coerce').dt.date
-
-            if not todo_historico:
-                df_periodo = df_pet[(df_pet['data_dt'] >= dt_inicio) & (df_pet['data_dt'] <= dt_fim)].sort_values(by="data", ascending=True)
-            else:
-                df_periodo = df_pet.sort_values(by="data", ascending=True)
-
-            incluir_resumo = "Resumo" in conteudo_opcao
-            incluir_detalhes = "Histórico" in conteudo_opcao
-
-            texto_exportacao = construir_texto_relatorio(
-                nome_perfil,
-                dt_inicio if not todo_historico else datetime.date(2000, 1, 1),
-                dt_fim if not todo_historico else datetime.date.today(),
-                incluir_resumo,
-                incluir_detalhes,
-                st.session_state.resumo_consultas,
-                df_periodo
-            )
-
-            col_btn1, col_btn2 = st.columns(2)
-            
-            with col_btn1:
-                st.download_button(
-                    label="📝 Baixar em Texto (.txt)",
-                    data=texto_exportacao.encode('utf-8'),
-                    file_name=f"relatorio_vet_{nome_perfil}_{datetime.date.today()}.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
-
-            with col_btn2:
-                pdf_bytes = gerar_pdf_bytes(texto_exportacao)
-                if pdf_bytes:
-                    st.download_button(
-                        label="📄 Baixar em PDF",
-                        data=pdf_bytes,
-                        file_name=f"relatorio_vet_{nome_perfil}_{datetime.date.today()}.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-                else:
-                    st.info("Para ativar o download em PDF, adicione `fpdf2` ao arquivo `requirements.txt`.")
+                with st.container(border=True):
+                    col_m1, col_m2 = st.columns([4, 1.2])
+                    with col_m1:
+                        st.markdown(f"##### 💊 {data_fmt} — {row['medico']}")
+                        st.markdown(f"{row['resumo']}")
+                    with col_m2:
+                        chk_del_med = st.checkbox("Confirmar", key=f"chk_med_{row['id']}")
+                        if st.button("🗑️ Apagar", key=f"del_med_{row['id']}"):
+                            if chk_del_med:
+                                if excluir_registro(row['id']):
+                                    st.toast("Medicamento apagado!", icon="🗑️")
+                                    st.rerun()
+                            else:
+                                st.warning("Marque a caixa para confirmar.")
+        else:
+            st.info("Nenhum medicamento ou tratamento foi registado ainda.")
     else:
-        st.info("Nenum dado encontrado no banco de dados.")
+        st.info("O histórico está vazio.")
+
+# ==========================================
+# SEPARADOR 7: ASSISTENTE IA & DÚVIDAS VETERINÁRIAS
+# ==========================================
+with tab7:
+    st.markdown("### 💬 Assistente IA Veterinário")
+    st.write("Tire dúvidas sobre sintomas, alimentação permitida/proibida, cuidados gerais e comportamento do seu pet.")
+
+    if "chat_mensagens" not in st.session_state:
+        st.session_state.chat_mensagens = [
+            {"role": "assistant", "content": f"Olá! Sou o seu assistente de saúde para o **{nome_perfil}**. Como posso ajudar hoje? Pode perguntar-me sobre remédios, sintomas, alimentos proibidos ou dúvidas gerais de cuidados."}
+        ]
+
+    for msg in st.session_state.chat_mensagens:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    if prompt_usuario := st.chat_input("Ex: Posso dar maçã ao meu cão? O que significa prostrado?"):
+        st.session_state.chat_mensagens.append({"role": "user", "content": prompt_usuario})
+        with st.chat_message("user"):
+            st.write(prompt_usuario)
+
+        with st.chat_message("assistant"):
+            with st.spinner("A consultar conhecimentos veterinários..."):
+                if tem_gemini or tem_groq:
+                    prompt_chat = f"""
+                    Você é um assistente virtual veterinário amigável, atencioso e rigoroso.
+                    DADOS DO PACIENTE:
+                    - Nome: {nome_perfil}
+
+                    PERGUNTA DO TUTOR:
+                    {prompt_usuario}
+
+                    Forneça uma resposta clara, objetiva e útil em português. 
+                    Se for uma emergência médica (dificuldade respiratória, convulsão, envenenamento), recomende explicitamente procurar uma clínica veterinária imediatamente.
+                    """
+                    resposta_ia = executar_ia_com_fallback(prompt_chat, json_mode=False)
+                else:
+                    resposta_ia = "⚠️ As chaves da IA não estão configuradas nos Secrets. Por favor, adicione a chave do Gemini ou Groq para utilizar o assistente."
+
+                st.write(resposta_ia)
+                st.session_state.chat_mensagens.append({"role": "assistant", "content": resposta_ia})
