@@ -1024,13 +1024,21 @@ with tab6:
             with col_m2:
                 freq_med = st.text_input("Frequência (Ex: A cada 12h, 1x ao mês)")
                 
-            data_inicio = st.date_input("Data de Início do Tratamento", value=datetime.date.today())
+            # Define o formato europeu (DD/MM/YYYY) na interface de seleção
+            data_inicio = st.date_input(
+                "Data de Início do Tratamento", 
+                value=datetime.date.today(),
+                format="DD/MM/YYYY"
+            )
             
             if st.form_submit_button("Guardar Medicamento", use_container_width=True):
                 if nome_med and dose_med:
                     resumo_med = f"Medicamento: {nome_med} | Dose: {dose_med} | Frequência: {freq_med}"
-                    # Salvamos no banco de dados como tipo "Medicamento" para a IA conseguir filtrar e ler depois
-                    salvar_registro(nome_perfil, str(data_inicio), "Prescrição / Casa", "Medicamento", resumo_med, {})
+                    
+                    # Converte a data para o formato DD/MM/YYYY antes de guardar no banco
+                    data_formatada = data_inicio.strftime("%d/%m/%Y")
+                    
+                    salvar_registro(nome_perfil, data_formatada, "Prescrição / Casa", "Medicamento", resumo_med, {})
                     st.toast("Medicamento adicionado ao histórico!", icon="✅")
                     st.rerun()
                 else:
@@ -1051,7 +1059,13 @@ with tab6:
                 st.subheader(f"📋 Lista de Medicações Registadas ({len(df_meds)})")
                 for _, row in df_meds.iterrows():
                     with st.container(border=True):
-                        st.markdown(f"**🗓️ Início:** {row['data']}")
+                        # Garante que registros antigos (salvos em AAAA-MM-DD) também sejam exibidos em DD/MM/YYYY
+                        try:
+                            data_exibicao = pd.to_datetime(row['data']).strftime("%d/%m/%Y")
+                        except Exception:
+                            data_exibicao = row['data']
+
+                        st.markdown(f"**🗓️ Início:** {data_exibicao}")
                         st.markdown(f"**💊 Detalhes:** {row['resumo']}")
             else:
                 st.info("Ainda não há medicamentos registados para este pet.")
