@@ -555,6 +555,190 @@ with tab1:
 # ==========================================
 # SEPARADOR 2: HISTÓRICO
 # ==========================================
+# --- MODAL DE EDIÇÃO AMPLO ---
+@st.dialog("✏️ Editar Registo do Histórico", width="large")
+def modal_editar_registro(row, idx):
+    try:
+        data_dt_obj = pd.to_datetime(row['data'], dayfirst=True)
+        data_padrao_edit = data_dt_obj.date()
+    except Exception:
+        data_padrao_edit = datetime.date.today()
+
+    with st.form(key=f"form_edit_modal_{row['id']}_{idx}"):
+        col_m1, col_m2 = st.columns(2)
+        
+        with col_m1:
+            nova_data = st.date_input(
+                "🗓️ Data do Documento", 
+                value=data_padrao_edit, 
+                format="DD/MM/YYYY", 
+                key=f"md_{row['id']}_{idx}"
+            )
+            novo_tipo = st.text_input(
+                "📄 Tipo de Documento (ex: Consulta, Exame, Receita)", 
+                value=str(row['tipo_documento']), 
+                key=f"mt_{row['id']}_{idx}"
+            )
+
+        with col_m2:
+            novo_medico = st.text_input(
+                "👨‍⚕️ Médico / Clínica", 
+                value=str(row['medico']), 
+                key=f"mm_{row['id']}_{idx}"
+            )
+
+        novo_resumo = st.text_area(
+            "📝 Resumo / Detalhes", 
+            value=str(row['resumo']), 
+            height=120, 
+            key=f"mr_{row['id']}_{idx}"
+        )
+        
+        # Trata o parâmetro técnico em segundo plano sem incomodar o utilizador
+        params_atuais = row.get("parametros", {})
+        if isinstance(params_atuais, str):
+            try:
+                params_atuais = json.loads(params_atuais)
+            except Exception:
+                params_atuais = {}
+
+        # Guarda os dados técnicos dentro de um menu colapsável
+        with st.expander("⚙️ Opções Avançadas (Dados Técnicos / JSON)"):
+            st.caption("Esta secção é destinada a configurações estruturadas avançadas.")
+            params_txt = json.dumps(params_atuais, ensure_ascii=False, indent=2)
+            novos_params_txt = st.text_area(
+                "Parâmetros estruturados", 
+                value=params_txt, 
+                height=100, 
+                key=f"mp_{row['id']}_{idx}"
+            )
+
+        col_f1, col_f2 = st.columns([1, 1])
+        with col_f1:
+            btn_salvar_edit = st.form_submit_button("💾 Guardar Alterações", use_container_width=True, type="primary")
+        
+        if btn_salvar_edit:
+            try:
+                novos_params = json.loads(novos_params_txt)
+            except Exception:
+                novos_params = params_atuais
+            
+            # Formatação explícita da data no formato padrão DD/MM/YYYY
+            data_formatada_salvar = nova_data.strftime("%d/%m/%Y")
+            
+            sucesso = atualizar_registro(
+                id_registro=row['id'],
+                paciente=row['paciente'],
+                data=data_formatada_salvar,
+                medico=novo_medico,
+                tipo_documento=novo_tipo,
+                resumo=novo_resumo,
+                parametros=novos_params
+            )
+            
+            if sucesso:
+                st.toast("Registo atualizado com sucesso!", icon="✅")
+                st.rerun()
+
+
+# --- ABA 2: HISTÓRICO ---
+with tab2:
+    df = carregar_historico()
+    
+    if not df.empty:
+        pacientes = list(df["paciente"].unique())
+        
+        col_filtro1, col_filtro2, col_filtro3 = st.columns([2, 2, 1.5])
+        with col_filtro1:
+            paciente_sel = st.selectbox("🐶 Selecione o Pet/Paciente:", pacientes)
+        with col_filtro2:
+            busca = st.text_input("🔍 Procurar:")
+        with col_filtro3:
+            ordem_ordem = st.selectbox("⏳ Ordem:", ["Cronológica (Mais antigo)", "Recentes Primeiro"])
+            
+        ordem_asc = (ordem_ordem == "Cronológica (Mais antigo)")
+        
+        # Normalização de datas para ordenação
+        df['data_dt'] = pd.to_datetime(df['data'], errors='coerce', dayfirst=True)
+        df_filtrado = df[df["paciente"] == paciente_sel].sort_values(by="data_dt", ascending=ordem_asc)
+        
+        if busca:
+            df_filtrado = df_filtrado[
+                df_filtrado['medico'].str.contains(busca, case=False, na=False) |
+                df_filtrado['resumo'].str.contains(busca, case=False, na=False) |
+                df_filtrado['tipo_documento'].str.contains(busca, case=False, na=False)
+            ]
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        col_met1, col_met2, col_met3 = st.columns(3)
+        col_met1.metric("Registos", len(df_filtrado))
+        col_met2.metric("Locais/Clínicas", df_filtrado['medico'].nunique())
+        
+        csv = df_filtrado.drop(columns=['data_dt'], errors='ignore').to_csv(index=False).encode('utf-8')
+        json_backup = gerar_backup_json()
+        
+        with col_met3:
+            st.download_button(
+                label="📥 Baixar CSV",
+                data=csv,
+                file_name=f"historico_{paciente_sel}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            if json_backup:
+                st.download_button(
+                    label="🛡️ Backup (JSON)",
+                    data=json_backup,
+                    file_name=f"backup_completo_{datetime.date.today().strftime('%d_%m_%Y')}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+            
+        st.markdown("---")
+
+        if df_filtrado.empty:
+            st.warning("Nenhum registo encontrado com essa palavra.")
+        else:
+            for idx, row in df_filtrado.iterrows():
+                try:
+                    data_dt_obj = pd.to_datetime(row['data'], dayfirst=True)
+                    data_formatada = data_dt_obj.strftime('%d/%m/%Y')
+                except Exception:
+                    data_formatada = str(row['data'])
+
+                with st.container(border=True):
+                    col_texto, col_botoes = st.columns([5, 2]) 
+                    
+                    with col_texto:
+                        st.subheader(f"🗓️ {data_formatada} - {row['tipo_documento']}")
+                        st.markdown(f"**🏥 Clínica/Médico:** {row['medico']}")
+                        st.markdown(f"**📝 Detalhes:** {row['resumo']}")
+                        
+                    with col_botoes:
+                        st.write("") 
+                        
+                        # --- BOTÃO QUE ABRE O MODAL LARGO DE EDIÇÃO ---
+                        if st.button("✏️ Editar", key=f"btn_modal_edit_{row['id']}_{idx}"):
+                            modal_editar_registro(row, idx)
+
+                        st.write("") # Espaço em branco para separar da exclusão
+
+                        # --- BOTÃO DE EXCLUSÃO ---
+                        key_chk = f"chk_{row['id']}_{idx}"
+                        key_btn = f"excluir_{row['id']}_{idx}"
+
+                        if st.button("🗑️ Apagar", key=key_btn, help="Marque a caixa abaixo para apagar"):
+                            if st.session_state.get(key_chk, False):
+                                if excluir_registro(row['id']):
+                                    st.toast("Registo apagado!", icon="🗑️")
+                                    st.rerun()
+                            else:
+                                st.warning("Marque 'Confirmar' 👇")
+                                
+                        st.checkbox("Confirmar", key=key_chk)
+
+    else:
+        st.info("O histórico está vazio. Adicione um novo registo!")
 # ==========================================
 # SEPARADOR 2: HISTÓRICO (Com Edição e Exclusão)
 # ==========================================
