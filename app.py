@@ -255,37 +255,61 @@ def gerar_pdf_bytes(texto_relatorio):
     pdf.add_page()
     pdf.set_font("Helvetica", size=10)
     texto_limpo = limpar_texto_pdf(texto_relatorio)
+
+
+
+
+
+
+    # Garantir que a cor da fonte é preta (R=0, G=0, B=0), sem azul!
+    pdf.set_text_color(0, 0, 0)
     
     for linha in texto_limpo.split('\n'):
         linha_str = linha.strip()
         if not linha_str:
             pdf.ln(3)
             continue
+            
+        # Títulos principais maiores para destacar bem no telemóvel (Tamanho 16)
         if "RELATORIO CLINICO" in linha_str or "RELATÓRIO CLÍNICO" in linha_str:
-            pdf.set_font("Helvetica", style="B", size=12)
+            pdf.set_font("Helvetica", style="B", size=16)
             try:
-                pdf.cell(pdf.epw, 7, linha_str, align="C", new_x="LMARGIN", new_y="NEXT")
+                # Altura da linha aumentada para 8
+                pdf.cell(pdf.epw, 8, linha_str, align="C", new_x="LMARGIN", new_y="NEXT")
             except Exception:
-                pdf.cell(0, 7, linha_str, ln=True, align="C")
-            pdf.set_font("Helvetica", size=10)
+                pdf.cell(0, 8, linha_str, ln=True, align="C")
+            # Retorna para o novo tamanho base otimizado para ecrãs
+            pdf.set_font("Helvetica", size=12)
+            
+        # Subtítulos (Tamanho 14 para manter a hierarquia clara)
         elif "RESUMO CLINICO" in linha_str or "HISTORICO DE REGISTROS" in linha_str:
             pdf.ln(2)
-            pdf.set_font("Helvetica", style="B", size=10)
+            pdf.set_font("Helvetica", style="B", size=14)
             try:
-                pdf.multi_cell(pdf.epw, 5, linha_str)
+                # Altura da linha aumentada para 7
+                pdf.multi_cell(pdf.epw, 7, linha_str)
             except Exception:
-                pdf.multi_cell(0, 5, linha_str)
-            pdf.set_font("Helvetica", size=10)
+                pdf.multi_cell(0, 7, linha_str)
+            # Retorna para o novo tamanho base
+            pdf.set_font("Helvetica", size=12)
+            
         elif linha_str.startswith("===") or linha_str.startswith("---"):
             pdf.ln(1)
+            
+        # Texto normal (Tamanho 12 e entrelinhas maior para não cansar a vista)
         else:
             try:
-                pdf.multi_cell(pdf.epw, 5, linha_str)
+                # Altura da linha alterada de 5 para 6 para leitura confortável
+                pdf.multi_cell(pdf.epw, 6, linha_str)
             except Exception:
-                pdf.multi_cell(0, 5, linha_str)
-            
+                pdf.multi_cell(0, 6, linha_str)
+                
     return bytes(pdf.output())
+    
+    
+    
 
+    
 # ==========================================
 # FUNÇÕES DO PERFIL (FOTO E DATA NASCIMENTO)
 # ==========================================
