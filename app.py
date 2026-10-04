@@ -500,7 +500,7 @@ with tab1:
             dados = st.session_state.dados_ia
             
             try:
-                data_padrao = datetime.datetime.strptime(dados.get("data", ""), "%Y-%m-%d").date()
+                data_padrao = datetime.datetime.strptime(dados.get("data", ""), "%d-%m-%Y").date()
             except Exception:
                 data_padrao = datetime.date.today()
 
