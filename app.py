@@ -46,7 +46,7 @@ def _chamar_gemini(prompt, json_mode=False):
     config = types.GenerateContentConfig(response_mime_type="application/json") if json_mode else None
     
     response = client.models.generate_content(
-        model="gemini-1.5-flash",  # Modelo estável do Google
+        model="gemini-3.8-flash",  # Modelo estável do Google
         contents=prompt,
         config=config
     )
@@ -83,7 +83,7 @@ def _chamar_groq(prompt, json_mode=False):
 
 def executar_ia_com_fallback(prompt, json_mode=False):
     provedores = [
-        ("Gemini (Google gemini-1.5-flash)", _chamar_gemini),
+        ("Gemini (Google gemini-3.8-flash)", _chamar_gemini),
         ("Groq (openai/gpt-oss-120b)", _chamar_groq)
     ]
 
@@ -1182,7 +1182,7 @@ with tab7:
                     img_pil = Image.open(imagem_rotulo)
                     
                     resposta_visao = client_gen.models.generate_content(
-                        model="gemini-1.5-flash",
+                        model="gemini-3.8-flash",
                         contents=[prompt_visao, img_pil],
                         config=types.GenerateContentConfig(response_mime_type="application/json")
                     )
