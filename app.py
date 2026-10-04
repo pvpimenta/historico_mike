@@ -861,45 +861,34 @@ with tab5:
                                     except:
                                         params = {}
                                 
+                                # ... (código anterior do for loop do texto_historico) ...
                                 if isinstance(params, dict) and len(params) > 0:
                                     texto_historico += f"  Parâmetros do Exame: {json.dumps(params, ensure_ascii=False)}\n"
                                 texto_historico += "\n"
                             
+                            # 1. Definir os dados do pet usando as variáveis da Sidebar
                             idade_pet = calcular_idade(data_nasc_input) if data_nasc_input else "idade desconhecida"
-                        raca_pet = raca_input if raca_input else "espécie desconhecida"
+                            raca_pet = raca_input if raca_input else "espécie desconhecida"
 
-                        prompt = f"""
-                        Você é um médico veterinário patologista. Leia o seguinte texto extraído de um exame/documento:
-                        
-                        TEXTO EXTRAÍDO:
-                        {texto_extraido}
-                        
-                        PACIENTE: {nome_paciente} ({raca_pet}, {idade_pet}).
-                        
-                        Extraia as informações estruturadas estritamente no formato JSON abaixo.
-                        
-                        REGRAS PARA PARÂMETROS:
-                        1. Se o exame contiver valores numéricos (ex: Ureia, Creatinina, ALT, etc.), extraia-os.
-                        2. É OBRIGATÓRIO preencher `ref_min` e `ref_max`. Se o documento não informar os limites de referência, utilize o seu conhecimento veterinário padrão ouro para a raça '{raca_pet}' e preencha os valores ideais.
-                        
-                        Formato esperado:
-                        {{
-                            "data": "AAAA-MM-DD",
-                            "medico": "Nome do Médico ou Clínica",
-                            "tipo_documento": "Receita, Exame, Atestado, Fatura ou Consulta",
-                            "resumo": "Resumo detalhado dos resultados",
-                            "parametros": {{
-                                "nome_do_parametro_aqui": {{
-                                    "valor": valor_numerico_do_paciente,
-                                    "unidade": "unidade (ex: mg/dL, U/L)",
-                                    "ref_min": valor_minimo_ideal,
-                                    "ref_max": valor_maximo_ideal
-                                }}
-                            }}
-                        }}
-                        Retorne APENAS o JSON válido, sem texto extra.
-                        """
+                            # 2. Criar o prompt_resumo focado no Relatório Clínico
+                            prompt_resumo = f"""
+                            Você é um médico veterinário experiente. Analise o seguinte histórico médico do paciente e crie um relatório clínico geral, claro e estruturado.
                             
+                            🐶 DADOS DO PACIENTE:
+                            - Nome: {nome_perfil}
+                            - Espécie/Raça: {raca_pet}
+                            - Idade Atual: {idade_pet}
+                            
+                            🏥 HISTÓRICO MÉDICO REGISTADO:
+                            {texto_historico}
+                            
+                            Com base nestes dados, crie um resumo do estado de saúde geral do paciente. 
+                            Avalie a evolução dos exames tendo em conta os parâmetros ideais esperados para a raça ({raca_pet}) e a idade ({idade_pet}).
+                            Destaque os principais pontos de atenção, alertas para parâmetros anormais e sugira recomendações gerais de acompanhamento.
+                            Formate a resposta de forma bonita e profissional usando Markdown.
+                            """
+                            
+                            # 3. Executar a IA (Note que passamos prompt_resumo e json_mode=False)
                             st.session_state.resumo_consultas = executar_ia_com_fallback(prompt_resumo, json_mode=False)
                             st.toast("Relatório completo gerado!", icon="🩺")
                         except Exception as e:
