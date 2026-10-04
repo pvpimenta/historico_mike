@@ -665,9 +665,6 @@ with tab3:
 # ------------------------------------------
 # SEPARADOR 4: DASHBOARD COM PARÂMETROS NORMAIS
 # ------------------------------------------
-# ------------------------------------------
-# SEPARADOR 4: DASHBOARD COM PARÂMETROS NORMAIS
-# ------------------------------------------
 with tab4:
     st.markdown("### 📈 Painel Clínico Avançado")
     st.write("Acompanhe a evolução dos parâmetros com análise visual, adaptada para qualquer tela.")
@@ -740,39 +737,44 @@ with tab4:
                     valor_anterior = df_serie[param_selecionado].iloc[-2] if len(df_serie) > 1 else None
                     data_atual_str = df_serie.index[-1].strftime('%d/%m/%Y')
                     
-                    # 2. Visão Atual (Mobile First: Empilha o texto e o velocímetro nativamente)
+                    # Tratamento inteligente da unidade (esconde os parênteses se não houver unidade)
+                    texto_unidade = f" ({unid})" if unid.strip() else ""
+                    sufixo_gauge = f" {unid}" if unid.strip() else ""
+
+                    # 2. Visão Atual (Mobile First)
                     st.markdown("<br>", unsafe_allow_html=True)
                     col_info, col_gauge = st.columns([1.2, 1], gap="medium")
                     
                     with col_info:
                         st.markdown(f"#### 🩺 Estado Atual")
                         if valor_anterior is not None:
-                            st.metric(label=f"Exame de {data_atual_str}", value=f"{valor_atual} {unid}", delta=f"{valor_atual - valor_anterior:.2f} (vs anterior)")
+                            st.metric(label=f"Exame de {data_atual_str}", value=f"{valor_atual}{sufixo_gauge}", delta=f"{valor_atual - valor_anterior:.2f} (vs anterior)")
                         else:
-                            st.metric(label=f"Exame de {data_atual_str}", value=f"{valor_atual} {unid}")
+                            st.metric(label=f"Exame de {data_atual_str}", value=f"{valor_atual}{sufixo_gauge}")
                             
                         # Alertas visuais claros
-                        if ref_min < ref_max:
-                            if valor_atual < ref_min:
-                                st.error(f"**Atenção:** Valor abaixo do normal (Mín: {ref_min}) ⬇️")
-                            elif valor_atual > ref_max:
-                                st.error(f"**Atenção:** Valor acima do normal (Máx: {ref_max}) ⬆️")
-                            else:
-                                st.success("**Excelente:** Valor dentro dos parâmetros saudáveis! ✅")
+                        if ref_min == 0.0 and ref_max == 0.0:
+                            st.info("ℹ️ Ajuste a 'Faixa de Referência' acima para ver a análise automática.")
+                        elif valor_atual < ref_min:
+                            st.error(f"**Atenção:** Valor abaixo do normal (Mín: {ref_min}) ⬇️")
+                        elif valor_atual > ref_max:
+                            st.error(f"**Atenção:** Valor acima do normal (Máx: {ref_max}) ⬆️")
+                        else:
+                            st.success("**Excelente:** Valor dentro dos parâmetros saudáveis! ✅")
                                 
                     with col_gauge:
                         limite_max_grafico = max(ref_max * 1.3, valor_atual * 1.2) if ref_max > 0 else valor_atual * 1.5
                         fig_gauge = go.Figure(go.Indicator(
                             mode = "gauge+number",
                             value = valor_atual,
-                            number = {'suffix': f" {unid}", 'font': {'size': 26}}, 
+                            number = {'suffix': sufixo_gauge, 'font': {'size': 26}}, # Aplica o sufixo limpo
                             gauge = {
                                 'axis': {'range': [0, limite_max_grafico], 'tickwidth': 1},
                                 'bar': {'color': "rgba(0,0,0,0)"}, 
                                 'steps': [
-                                    {'range': [0, ref_min], 'color': "#ffb7a1"}, # Vermelho claro
-                                    {'range': [ref_min, ref_max], 'color': "#a1ffb7"}, # Verde claro
-                                    {'range': [ref_max, limite_max_grafico], 'color': "#ff9494"} # Vermelho mais forte
+                                    {'range': [0, ref_min], 'color': "#ffb7a1"}, 
+                                    {'range': [ref_min, ref_max], 'color': "#a1ffb7"}, 
+                                    {'range': [ref_max, limite_max_grafico], 'color': "#ff9494"} 
                                 ],
                                 'threshold': {
                                     'line': {'color': "#1f77b4", 'width': 6},
@@ -781,31 +783,45 @@ with tab4:
                                 }
                             }
                         ))
-                        # Margens super reduzidas para caber no telemóvel sem margens brancas gigantes
                         fig_gauge.update_layout(margin=dict(l=15, r=15, t=15, b=15), height=200)
                         st.plotly_chart(fig_gauge, use_container_width=True)
 
                     st.markdown("---")
                     
-                    # 3. Gráfico Histórico (Ocupa 100% da largura para facilitar o toque)
+                    # 3. Gráfico Histórico Premium (Estilo Apple Health)
                     st.markdown(f"#### 📈 Evolução de **{param_selecionado.upper()}**")
+                    
                     fig_line = px.line(
                         df_serie, x=df_serie.index, y=param_selecionado, markers=True
                     )
-                    # Linha mais grossa e marcadores maiores para quem usa os dedos
-                    fig_line.update_traces(line=dict(color="#2E86C1", width=4), marker=dict(size=10))
+                    
+                    # Linha curva (spline), marcadores bonitos e preenchimento sombreado por baixo
+                    fig_line.update_traces(
+                        line=dict(color="#2E86C1", width=4, shape="spline"), 
+                        marker=dict(size=10, color="#1B4F72", line=dict(width=2, color="white")),
+                        fill='tozeroy', 
+                        fillcolor="rgba(46, 134, 193, 0.15)" # Sombra azulada elegante
+                    )
                     
                     if ref_min < ref_max:
                         fig_line.add_hrect(
-                            y0=ref_min, y1=ref_max, line_width=0, fillcolor="green", opacity=0.10,
-                            annotation_text="Saudável", annotation_position="top left"
+                            y0=ref_min, y1=ref_max, line_width=0, fillcolor="green", opacity=0.08,
+                            annotation_text="Faixa Saudável", annotation_position="top left",
+                            annotation_font_color="green"
                         )
-                    # hovermode unificado facilita ver os dados ao arrastar o dedo na tela
+                        
+                    # Remove grelhas verticais para um aspeto mais limpo e aplica o texto_unidade corrigido
                     fig_line.update_layout(
-                        xaxis_title="", yaxis_title=f"Valor ({unid})", 
+                        xaxis_title="", 
+                        yaxis_title=f"Valor{texto_unidade}", 
                         margin=dict(l=10, r=10, t=30, b=10),
-                        hovermode="x unified"
+                        hovermode="x unified",
+                        xaxis=dict(showgrid=False),
+                        yaxis=dict(showgrid=True, gridcolor="rgba(200, 200, 200, 0.2)"),
+                        plot_bgcolor="rgba(0,0,0,0)", # Fundo transparente
+                        paper_bgcolor="rgba(0,0,0,0)"
                     )
+                    
                     st.plotly_chart(fig_line, use_container_width=True)
 
                     st.markdown("---")
@@ -815,14 +831,14 @@ with tab4:
                     
                     with tab_kpis:
                         col_max, col_min, col_media = st.columns(3)
-                        col_max.metric(label="Máximo Histórico", value=f"{df_serie[param_selecionado].max()} {unid}")
-                        col_min.metric(label="Mínimo Histórico", value=f"{df_serie[param_selecionado].min()} {unid}")
-                        col_media.metric(label="Média Geral", value=f"{df_serie[param_selecionado].mean():.2f} {unid}")
+                        col_max.metric(label="Máximo Histórico", value=f"{df_serie[param_selecionado].max()}{sufixo_gauge}")
+                        col_min.metric(label="Mínimo Histórico", value=f"{df_serie[param_selecionado].min()}{sufixo_gauge}")
+                        col_media.metric(label="Média Geral", value=f"{df_serie[param_selecionado].mean():.2f}{sufixo_gauge}")
 
                     with tab_dados:
                         df_exibicao = df_serie.copy()
                         df_exibicao.index = df_exibicao.index.strftime('%d/%m/%Y')
-                        df_exibicao.columns = [f"Valor Registado ({unid})"]
+                        df_exibicao.columns = [f"Valor Registado{texto_unidade}"]
                         st.dataframe(df_exibicao, use_container_width=True)
                         
                     with tab_ia:
@@ -836,6 +852,7 @@ with tab4:
                     st.warning("Não há dados numéricos suficientes para desenhar o gráfico deste parâmetro.")
         else:
             st.info("Nenhum parâmetro numérico foi extraído nos registos deste paciente ainda.")
+
 
         
 # ------------------------------------------
