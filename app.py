@@ -869,7 +869,13 @@ with tab5:
         if not df_consultas.empty:
             st.subheader(f"📋 Registo das Consultas ({len(df_consultas)})")
             for idx, row in df_consultas.iterrows():
-                with st.expander(f"🗓️ {row['data']} — {row['medico']}"):
+                # Converte a data para o formato DD/MM/AAAA
+                try:
+                    data_formatada = pd.to_datetime(row['data']).strftime('%d/%m/%Y')
+                except:
+                    data_formatada = row['data']
+                    
+                with st.expander(f"🗓️ {data_formatada} — {row['medico']}"):
                     st.markdown(f"**Relato:** {row['resumo']}")
             
             st.markdown("<br>", unsafe_allow_html=True)
