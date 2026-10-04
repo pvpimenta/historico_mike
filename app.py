@@ -621,7 +621,7 @@ with tab3:
             
             col_d, col_h = st.columns(2)
             with col_d:
-                data_lembrete = st.date_input("🗓️ Data")
+                data_lembrete = st.date_input("🗓️ Data",format="DD/MM/YYYY")
             with col_h:
                 hora_lembrete = st.time_input("⏰ Horário", value=datetime.time(12, 0))
                 
