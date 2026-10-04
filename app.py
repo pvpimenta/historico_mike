@@ -5,6 +5,7 @@ from PIL import Image
 from google import genai
 from google.genai import types
 from openai import OpenAI
+import plotly.graph_objects as go
 import time
 import json
 import datetime
@@ -658,8 +659,8 @@ with tab3:
 # SEPARADOR 4: DASHBOARD COM PARÂMETROS NORMAIS
 # ------------------------------------------
 with tab4:
-    st.markdown("### 📈 Evolução dos Parâmetros Clínicos")
-    st.write("Acompanhe o histórico de exames com análises detalhadas e compare com os valores de referência normais.")
+    st.markdown("### 📈 Painel Clínico Avançado")
+    st.write("Acompanhe a evolução dos parâmetros com análise visual, limites de referência e ajuda da Inteligência Artificial.")
     
     df_dash = carregar_historico()
     
@@ -673,7 +674,7 @@ with tab4:
         
         lista_parametros_valores = []
         datas_validas = []
-        dicionario_referencias = {} # Guarda as referências mais recentes para cada parâmetro
+        dicionario_referencias = {} 
         
         for idx, row in df_dash.iterrows():
             params = row.get("parametros")
@@ -686,10 +687,8 @@ with tab4:
             if isinstance(params, dict) and len(params) > 0:
                 valores_simples = {}
                 for key, data_param in params.items():
-                    # Verifica se está no formato antigo (só número) ou novo (com valor, min, max)
                     if isinstance(data_param, dict) and "valor" in data_param:
                         valores_simples[key] = data_param["valor"]
-                        # Atualiza as referências com as do exame mais recente
                         dicionario_referencias[key] = {
                             "min": data_param.get("ref_min", 0.0),
                             "max": data_param.get("ref_max", 0.0),
@@ -710,7 +709,7 @@ with tab4:
             df_plot = df_plot.sort_index()
             
             colunas_disponiveis = df_plot.columns.tolist()
-            param_selecionado = st.selectbox("🔬 Qual exame/parâmetro deseja visualizar?", colunas_disponiveis)
+            param_selecionado = st.selectbox("🔬 Qual exame/parâmetro deseja analisar?", colunas_disponiveis)
             
             if param_selecionado:
                 df_serie = df_plot[[param_selecionado]].dropna()
@@ -718,79 +717,113 @@ with tab4:
                 if not df_serie.empty:
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    # Recupera as referências detetadas pela IA
                     ref_sugerida = dicionario_referencias.get(param_selecionado, {})
                     unid = ref_sugerida.get("unid", "")
                     
-                    st.markdown("##### 📌 Faixa de Referência Normal (Pré-preenchida pela IA)")
-                    col_ref1, col_ref2 = st.columns(2)
-                    with col_ref1:
-                        ref_min = st.number_input("Valor Mínimo Saudável", value=float(ref_sugerida.get("min") or 0.0), step=0.1)
-                    with col_ref2:
-                        ref_max = st.number_input("Valor Máximo Saudável", value=float(ref_sugerida.get("max") or 0.0), step=0.1)
+                    with st.expander("⚙️ Ajustar Faixa de Referência (Opcional)"):
+                        col_ref1, col_ref2 = st.columns(2)
+                        with col_ref1:
+                            ref_min = st.number_input("Valor Mínimo Saudável", value=float(ref_sugerida.get("min") or 0.0), step=0.1)
+                        with col_ref2:
+                            ref_max = st.number_input("Valor Máximo Saudável", value=float(ref_sugerida.get("max") or 0.0), step=0.1)
                     
                     valor_atual = df_serie[param_selecionado].iloc[-1]
                     valor_anterior = df_serie[param_selecionado].iloc[-2] if len(df_serie) > 1 else None
                     data_atual_str = df_serie.index[-1].strftime('%d/%m/%Y')
                     
-                    st.markdown("---")
-                    col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-                    
-                    # Mostra alerta se o valor atual estiver fora da referência
+                    # Alertas
+                    estado_cor = "normal"
                     alerta_fora = ""
                     if ref_min < ref_max:
-                        if valor_atual < ref_min or valor_atual > ref_max:
-                            alerta_fora = " ⚠️ (Fora do Normal)"
+                        if valor_atual < ref_min:
+                            estado_cor = "abaixo"
+                            alerta_fora = " ⬇️ (Abaixo do Normal)"
+                        elif valor_atual > ref_max:
+                            estado_cor = "acima"
+                            alerta_fora = " ⬆️ (Acima do Normal)"
                     
+                    # KPIs principais
+                    col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
                     with col_kpi1:
                         if valor_anterior is not None:
-                            variacao = valor_atual - valor_anterior
-                            st.metric(label=f"Último Registo ({data_atual_str})", value=f"{valor_atual} {unid}{alerta_fora}", delta=f"{variacao:.2f}")
+                            st.metric(label=f"Último: {data_atual_str}", value=f"{valor_atual} {unid}", delta=f"{valor_atual - valor_anterior:.2f} (vs anterior)")
                         else:
-                            st.metric(label=f"Último Registo ({data_atual_str})", value=f"{valor_atual} {unid}{alerta_fora}")
-                            
+                            st.metric(label=f"Último: {data_atual_str}", value=f"{valor_atual} {unid}")
                     with col_kpi2:
                         st.metric(label="Máximo Histórico", value=f"{df_serie[param_selecionado].max()} {unid}")
                     with col_kpi3:
                         st.metric(label="Mínimo Histórico", value=f"{df_serie[param_selecionado].min()} {unid}")
-                        
+                    
                     st.markdown("---")
                     
-                    fig = px.line(
-                        df_serie, 
-                        x=df_serie.index, 
-                        y=param_selecionado,
-                        markers=True,
-                        text=param_selecionado,
-                        title=f"Histórico Clínico: <b>{param_selecionado.upper()}</b>"
-                    )
+                    # Gráficos Lado a Lado: Linha (Histórico) e Velocímetro (Atual)
+                    col_graf1, col_graf2 = st.columns([2, 1])
                     
-                    fig.update_traces(
-                        textposition="top center",
-                        line=dict(color="#FF4B4B", width=3),
-                        marker=dict(size=9, symbol="circle", line=dict(color="white", width=2)),
-                        textfont=dict(size=11, color="gray")
-                    )
-                    
-                    if ref_min < ref_max:
-                        fig.add_hrect(
-                            y0=ref_min, y1=ref_max, 
-                            line_width=0, fillcolor="green", opacity=0.15,
-                            annotation_text="Faixa Normal Saudável", annotation_position="top right"
+                    with col_graf1:
+                        fig_line = px.line(
+                            df_serie, x=df_serie.index, y=param_selecionado, markers=True,
+                            title=f"Evolução ao longo do tempo: <b>{param_selecionado.upper()}</b>"
                         )
+                        fig_line.update_traces(line=dict(color="#2E86C1", width=3), marker=dict(size=8))
+                        
+                        if ref_min < ref_max:
+                            fig_line.add_hrect(
+                                y0=ref_min, y1=ref_max, line_width=0, fillcolor="green", opacity=0.15,
+                                annotation_text="Saudável", annotation_position="top right"
+                            )
+                        fig_line.update_layout(xaxis_title="", yaxis_title=f"Valor {unid}", margin=dict(l=0, r=0, t=40, b=0))
+                        st.plotly_chart(fig_line, use_container_width=True)
+                        
+                    with col_graf2:
+                        # Gráfico de Velocímetro (Gauge)
+                        limite_max_grafico = max(ref_max * 1.3, valor_atual * 1.2) if ref_max > 0 else valor_atual * 1.5
+                        fig_gauge = go.Figure(go.Indicator(
+                            mode = "gauge+number",
+                            value = valor_atual,
+                            title = {'text': "Estado Atual", 'font': {'size': 16}},
+                            number = {'suffix': f" {unid}", 'font': {'size': 24}},
+                            gauge = {
+                                'axis': {'range': [0, limite_max_grafico]},
+                                'bar': {'color': "rgba(0,0,0,0)"}, # Esconde a barra padrão
+                                'steps': [
+                                    {'range': [0, ref_min], 'color': "#FFA07A"}, # Laranja (Abaixo)
+                                    {'range': [ref_min, ref_max], 'color': "#90EE90"}, # Verde (Saudável)
+                                    {'range': [ref_max, limite_max_grafico], 'color': "#FF6347"} # Vermelho (Acima)
+                                ],
+                                'threshold': {
+                                    'line': {'color': "black", 'width': 4},
+                                    'thickness': 0.75,
+                                    'value': valor_atual
+                                }
+                            }
+                        ))
+                        fig_gauge.update_layout(margin=dict(l=20, r=20, t=40, b=20), height=300)
+                        st.plotly_chart(fig_gauge, use_container_width=True)
+                        if alerta_fora:
+                            st.warning(f"**Atenção:** O valor atual encontra-se{alerta_fora.split('(')[1][:-1]}.")
+                        else:
+                            st.success("**Excelente:** O valor atual está dentro dos parâmetros normais.")
+
+                    st.markdown("---")
                     
-                    fig.update_layout(
-                        hovermode="x unified",
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        xaxis_title="Data do Exame",
-                        yaxis_title=f"Valor Registado {f'({unid})' if unid else ''}",
-                        xaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.2)'),
-                        yaxis=dict(showgrid=True, gridcolor='rgba(200,200,200,0.2)'),
-                        margin=dict(l=20, r=20, t=50, b=20)
-                    )
+                    # Rodapé com Tabela de Dados e Ajuda da IA
+                    col_tab, col_ia = st.columns([1, 1])
                     
-                    st.plotly_chart(fig, use_container_width=True)
+                    with col_tab:
+                        st.markdown("##### 📅 Tabela de Dados Brutos")
+                        # Prepara tabela para exibir bonita
+                        df_exibicao = df_serie.copy()
+                        df_exibicao.index = df_exibicao.index.strftime('%d/%m/%Y')
+                        df_exibicao.columns = [f"Valor Registado ({unid})"]
+                        st.dataframe(df_exibicao, use_container_width=True)
+                        
+                    with col_ia:
+                        st.markdown("##### 🧠 O que significa este parâmetro?")
+                        if st.button(f"Explicar '{param_selecionado}' com IA", use_container_width=True):
+                            with st.spinner("A consultar a literatura veterinária..."):
+                                prompt_explica = f"O utilizador está a ver o parâmetro sanguíneo/exame '{param_selecionado}' num dashboard veterinário. Explique de forma muito resumida (máximo 3 parágrafos curtos) o que é este parâmetro, qual a sua função no organismo do animal, e o que pode significar se estiver demasiado alto ou demasiado baixo."
+                                explicacao = executar_ia_com_fallback(prompt_explica, json_mode=False)
+                                st.info(explicacao)
                 else:
                     st.warning("Não há dados numéricos suficientes para desenhar o gráfico deste parâmetro.")
         else:
