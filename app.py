@@ -667,7 +667,7 @@ with tab3:
 # ------------------------------------------
 with tab4:
     st.markdown("### 📈 Painel Clínico Avançado")
-    st.write("Acompanhe a evolução dos parâmetros com análise visual, adaptada para qualquer tela.")
+
     
     df_dash = carregar_historico()
     
@@ -725,13 +725,55 @@ with tab4:
                     ref_sugerida = dicionario_referencias.get(param_selecionado, {})
                     unid = ref_sugerida.get("unid", "")
                     
+                    original_min = float(ref_sugerida.get("min") or 0.0)
+                    original_max = float(ref_sugerida.get("max") or 0.0)
+                    
+                    # --- NOVIDADE: PREENCHIMENTO AUTOMÁTICO VIA IA ---
+                    cache_key = f"ia_ref_{param_selecionado}"
+                    
+                    # Se não vieram referências do exame, pedimos à IA para preencher
+                    if original_min == 0.0 and original_max == 0.0:
+                        if cache_key not in st.session_state:
+                            with st.spinner(f"🤖 A IA está a procurar os valores de referência padrão para '{param_selecionado}'..."):
+                                prompt_ref = f"Forneça a faixa de referência saudável padrão na medicina veterinária (cães/gatos) para o exame '{param_selecionado}'. Retorne APENAS um JSON no formato exato: {{\"min\": 10.5, \"max\": 25.0, \"unid\": \"mg/dL\"}}. Não inclua texto explicativo, formatação markdown ou crases, apenas o objeto JSON."
+                                
+                                resposta_ia = executar_ia_com_fallback(prompt_ref, json_mode=True)
+                                
+                                try:
+                                    # Limpar formatação caso a IA teime em mandar markdown
+                                    if isinstance(resposta_ia, str):
+                                        resposta_ia = resposta_ia.replace("```json", "").replace("```", "").strip()
+                                        dados_ia = json.loads(resposta_ia)
+                                    else:
+                                        dados_ia = resposta_ia
+                                        
+                                    st.session_state[cache_key] = {
+                                        "min": float(dados_ia.get("min", 0.0)),
+                                        "max": float(dados_ia.get("max", 0.0)),
+                                        "unid": dados_ia.get("unid", unid)
+                                    }
+                                except Exception:
+                                    # Se a IA falhar em gerar o JSON corretamente, mantém a zeros
+                                    st.session_state[cache_key] = {"min": 0.0, "max": 0.0, "unid": unid}
+                        
+                        # Recupera os valores preenchidos pela IA da memória
+                        valores_atuais_ref = st.session_state[cache_key]
+                        original_min = valores_atuais_ref["min"]
+                        original_max = valores_atuais_ref["max"]
+                        if not unid:
+                            unid = valores_atuais_ref["unid"]
+                    # -------------------------------------------------
+                    
                     # 1. Configurações num Expander discreto para não poluir a tela
                     with st.expander("⚙️ Ajustar Faixa de Referência"):
+                        if cache_key in st.session_state and (original_min > 0 or original_max > 0):
+                            st.caption("✨ Valores sugeridos automaticamente pela Inteligência Artificial.")
+                            
                         col_ref1, col_ref2 = st.columns(2)
                         with col_ref1:
-                            ref_min = st.number_input("Mínimo Saudável", value=float(ref_sugerida.get("min") or 0.0), step=0.1)
+                            ref_min = st.number_input("Mínimo Saudável", value=original_min, step=0.1)
                         with col_ref2:
-                            ref_max = st.number_input("Máximo Saudável", value=float(ref_sugerida.get("max") or 0.0), step=0.1)
+                            ref_max = st.number_input("Máximo Saudável", value=original_max, step=0.1)
                             
                     valor_atual = df_serie[param_selecionado].iloc[-1]
                     valor_anterior = df_serie[param_selecionado].iloc[-2] if len(df_serie) > 1 else None
