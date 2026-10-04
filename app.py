@@ -388,7 +388,7 @@ with st.sidebar:
         st.info("Nenhuma foto de perfil cadastrada. Envie uma abaixo!")
 
     # Campo de Data de Nascimento e Contador de Idade
-    data_nasc_input = st.date_input("🎂 Data de Nascimento", value=data_nasc_val, key="data_nasc_input")
+    data_nasc_input = st.date_input("🎂 Data de Nascimento", value=data_nasc_val,format="DD/MM/YYYY", key="data_nasc_input")
     
     if data_nasc_input and data_nasc_input <= datetime.date.today():
         idade_formatada = calcular_idade(data_nasc_input)
