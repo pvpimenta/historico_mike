@@ -589,10 +589,17 @@ with tab2:
             st.warning("Nenhum registo encontrado com essa palavra.")
         else:
             for idx, row in df_filtrado.iterrows():
+                # Converte a data para o formato DD/MM/AAAA
+                try:
+                    data_formatada = pd.to_datetime(row['data']).strftime('%d/%m/%Y')
+                except:
+                    data_formatada = row['data']
+
                 with st.container(border=True):
                     col_texto, col_botao = st.columns([5, 1.5])
                     with col_texto:
-                        st.subheader(f"🗓️ {row['data']} - {row['tipo_documento']}")
+                        # Usa a nova data_formatada aqui no subheader
+                        st.subheader(f"🗓️ {data_formatada} - {row['tipo_documento']}")
                         st.markdown(f"**🏥 Clínica/Médico:** {row['medico']}")
                         st.markdown(f"**📝 Detalhes:** {row['resumo']}")
                     with col_botao:
