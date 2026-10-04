@@ -665,9 +665,12 @@ with tab3:
 # ------------------------------------------
 # SEPARADOR 4: DASHBOARD COM PARÂMETROS NORMAIS
 # ------------------------------------------
+# ------------------------------------------
+# SEPARADOR 4: DASHBOARD COM PARÂMETROS NORMAIS
+# ------------------------------------------
 with tab4:
     st.markdown("### 📈 Painel Clínico Avançado")
-    st.write("Acompanhe a evolução dos parâmetros com análise visual, limites de referência e ajuda da Inteligência Artificial.")
+    st.write("Acompanhe a evolução dos parâmetros com análise visual, adaptada para qualquer tela.")
     
     df_dash = carregar_historico()
     
@@ -722,112 +725,110 @@ with tab4:
                 df_serie = df_plot[[param_selecionado]].dropna()
                 
                 if not df_serie.empty:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    
                     ref_sugerida = dicionario_referencias.get(param_selecionado, {})
                     unid = ref_sugerida.get("unid", "")
                     
-                    with st.expander("⚙️ Ajustar Faixa de Referência (Opcional)"):
+                    # 1. Configurações num Expander discreto para não poluir a tela
+                    with st.expander("⚙️ Ajustar Faixa de Referência"):
                         col_ref1, col_ref2 = st.columns(2)
                         with col_ref1:
-                            ref_min = st.number_input("Valor Mínimo Saudável", value=float(ref_sugerida.get("min") or 0.0), step=0.1)
+                            ref_min = st.number_input("Mínimo Saudável", value=float(ref_sugerida.get("min") or 0.0), step=0.1)
                         with col_ref2:
-                            ref_max = st.number_input("Valor Máximo Saudável", value=float(ref_sugerida.get("max") or 0.0), step=0.1)
-                    
+                            ref_max = st.number_input("Máximo Saudável", value=float(ref_sugerida.get("max") or 0.0), step=0.1)
+                            
                     valor_atual = df_serie[param_selecionado].iloc[-1]
                     valor_anterior = df_serie[param_selecionado].iloc[-2] if len(df_serie) > 1 else None
                     data_atual_str = df_serie.index[-1].strftime('%d/%m/%Y')
                     
-                    # Alertas
-                    estado_cor = "normal"
-                    alerta_fora = ""
-                    if ref_min < ref_max:
-                        if valor_atual < ref_min:
-                            estado_cor = "abaixo"
-                            alerta_fora = " ⬇️ (Abaixo do Normal)"
-                        elif valor_atual > ref_max:
-                            estado_cor = "acima"
-                            alerta_fora = " ⬆️ (Acima do Normal)"
+                    # 2. Visão Atual (Mobile First: Empilha o texto e o velocímetro nativamente)
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    col_info, col_gauge = st.columns([1.2, 1], gap="medium")
                     
-                    # KPIs principais
-                    col_kpi1, col_kpi2, col_kpi3 = st.columns(3)
-                    with col_kpi1:
+                    with col_info:
+                        st.markdown(f"#### 🩺 Estado Atual")
                         if valor_anterior is not None:
-                            st.metric(label=f"Último: {data_atual_str}", value=f"{valor_atual} {unid}", delta=f"{valor_atual - valor_anterior:.2f} (vs anterior)")
+                            st.metric(label=f"Exame de {data_atual_str}", value=f"{valor_atual} {unid}", delta=f"{valor_atual - valor_anterior:.2f} (vs anterior)")
                         else:
-                            st.metric(label=f"Último: {data_atual_str}", value=f"{valor_atual} {unid}")
-                    with col_kpi2:
-                        st.metric(label="Máximo Histórico", value=f"{df_serie[param_selecionado].max()} {unid}")
-                    with col_kpi3:
-                        st.metric(label="Mínimo Histórico", value=f"{df_serie[param_selecionado].min()} {unid}")
-                    
-                    st.markdown("---")
-                    
-                    # Gráficos Lado a Lado: Linha (Histórico) e Velocímetro (Atual)
-                    col_graf1, col_graf2 = st.columns([2, 1])
-                    
-                    with col_graf1:
-                        fig_line = px.line(
-                            df_serie, x=df_serie.index, y=param_selecionado, markers=True,
-                            title=f"Evolução ao longo do tempo: <b>{param_selecionado.upper()}</b>"
-                        )
-                        fig_line.update_traces(line=dict(color="#2E86C1", width=3), marker=dict(size=8))
-                        
+                            st.metric(label=f"Exame de {data_atual_str}", value=f"{valor_atual} {unid}")
+                            
+                        # Alertas visuais claros
                         if ref_min < ref_max:
-                            fig_line.add_hrect(
-                                y0=ref_min, y1=ref_max, line_width=0, fillcolor="green", opacity=0.15,
-                                annotation_text="Saudável", annotation_position="top right"
-                            )
-                        fig_line.update_layout(xaxis_title="", yaxis_title=f"Valor {unid}", margin=dict(l=0, r=0, t=40, b=0))
-                        st.plotly_chart(fig_line, use_container_width=True)
-                        
-                    with col_graf2:
-                        # Gráfico de Velocímetro (Gauge)
+                            if valor_atual < ref_min:
+                                st.error(f"**Atenção:** Valor abaixo do normal (Mín: {ref_min}) ⬇️")
+                            elif valor_atual > ref_max:
+                                st.error(f"**Atenção:** Valor acima do normal (Máx: {ref_max}) ⬆️")
+                            else:
+                                st.success("**Excelente:** Valor dentro dos parâmetros saudáveis! ✅")
+                                
+                    with col_gauge:
                         limite_max_grafico = max(ref_max * 1.3, valor_atual * 1.2) if ref_max > 0 else valor_atual * 1.5
                         fig_gauge = go.Figure(go.Indicator(
                             mode = "gauge+number",
                             value = valor_atual,
-                            title = {'text': "Estado Atual", 'font': {'size': 16}},
-                            number = {'suffix': f" {unid}", 'font': {'size': 24}},
+                            number = {'suffix': f" {unid}", 'font': {'size': 26}}, 
                             gauge = {
-                                'axis': {'range': [0, limite_max_grafico]},
-                                'bar': {'color': "rgba(0,0,0,0)"}, # Esconde a barra padrão
+                                'axis': {'range': [0, limite_max_grafico], 'tickwidth': 1},
+                                'bar': {'color': "rgba(0,0,0,0)"}, 
                                 'steps': [
-                                    {'range': [0, ref_min], 'color': "#FFA07A"}, # Laranja (Abaixo)
-                                    {'range': [ref_min, ref_max], 'color': "#90EE90"}, # Verde (Saudável)
-                                    {'range': [ref_max, limite_max_grafico], 'color': "#FF6347"} # Vermelho (Acima)
+                                    {'range': [0, ref_min], 'color': "#ffb7a1"}, # Vermelho claro
+                                    {'range': [ref_min, ref_max], 'color': "#a1ffb7"}, # Verde claro
+                                    {'range': [ref_max, limite_max_grafico], 'color': "#ff9494"} # Vermelho mais forte
                                 ],
                                 'threshold': {
-                                    'line': {'color': "black", 'width': 4},
-                                    'thickness': 0.75,
+                                    'line': {'color': "#1f77b4", 'width': 6},
+                                    'thickness': 0.8,
                                     'value': valor_atual
                                 }
                             }
                         ))
-                        fig_gauge.update_layout(margin=dict(l=20, r=20, t=40, b=20), height=300)
+                        # Margens super reduzidas para caber no telemóvel sem margens brancas gigantes
+                        fig_gauge.update_layout(margin=dict(l=15, r=15, t=15, b=15), height=200)
                         st.plotly_chart(fig_gauge, use_container_width=True)
-                        if alerta_fora:
-                            st.warning(f"**Atenção:** O valor atual encontra-se{alerta_fora.split('(')[1][:-1]}.")
-                        else:
-                            st.success("**Excelente:** O valor atual está dentro dos parâmetros normais.")
 
                     st.markdown("---")
                     
-                    # Rodapé com Tabela de Dados e Ajuda da IA
-                    col_tab, col_ia = st.columns([1, 1])
+                    # 3. Gráfico Histórico (Ocupa 100% da largura para facilitar o toque)
+                    st.markdown(f"#### 📈 Evolução de **{param_selecionado.upper()}**")
+                    fig_line = px.line(
+                        df_serie, x=df_serie.index, y=param_selecionado, markers=True
+                    )
+                    # Linha mais grossa e marcadores maiores para quem usa os dedos
+                    fig_line.update_traces(line=dict(color="#2E86C1", width=4), marker=dict(size=10))
                     
-                    with col_tab:
-                        st.markdown("##### 📅 Tabela de Dados Brutos")
-                        # Prepara tabela para exibir bonita
+                    if ref_min < ref_max:
+                        fig_line.add_hrect(
+                            y0=ref_min, y1=ref_max, line_width=0, fillcolor="green", opacity=0.10,
+                            annotation_text="Saudável", annotation_position="top left"
+                        )
+                    # hovermode unificado facilita ver os dados ao arrastar o dedo na tela
+                    fig_line.update_layout(
+                        xaxis_title="", yaxis_title=f"Valor ({unid})", 
+                        margin=dict(l=10, r=10, t=30, b=10),
+                        hovermode="x unified"
+                    )
+                    st.plotly_chart(fig_line, use_container_width=True)
+
+                    st.markdown("---")
+                    
+                    # 4. Detalhes em Abas (Poupa espaço imenso em telas pequenas)
+                    tab_kpis, tab_dados, tab_ia = st.tabs(["📊 Máx & Mín", "📅 Tabela Bruta", "🧠 Ajuda da IA"])
+                    
+                    with tab_kpis:
+                        col_max, col_min, col_media = st.columns(3)
+                        col_max.metric(label="Máximo Histórico", value=f"{df_serie[param_selecionado].max()} {unid}")
+                        col_min.metric(label="Mínimo Histórico", value=f"{df_serie[param_selecionado].min()} {unid}")
+                        col_media.metric(label="Média Geral", value=f"{df_serie[param_selecionado].mean():.2f} {unid}")
+
+                    with tab_dados:
                         df_exibicao = df_serie.copy()
                         df_exibicao.index = df_exibicao.index.strftime('%d/%m/%Y')
                         df_exibicao.columns = [f"Valor Registado ({unid})"]
                         st.dataframe(df_exibicao, use_container_width=True)
                         
-                    with col_ia:
-                        st.markdown("##### 🧠 O que significa este parâmetro?")
-                        if st.button(f"Explicar '{param_selecionado}' com IA", use_container_width=True):
-                            with st.spinner("A consultar a literatura veterinária..."):
+                    with tab_ia:
+                        st.markdown(f"**O que significa o parâmetro '{param_selecionado}'?**")
+                        if st.button("Gerar Explicação Médica", use_container_width=True):
+                            with st.spinner("A consultar literatura veterinária..."):
                                 prompt_explica = f"O utilizador está a ver o parâmetro sanguíneo/exame '{param_selecionado}' num dashboard veterinário. Explique de forma muito resumida (máximo 3 parágrafos curtos) o que é este parâmetro, qual a sua função no organismo do animal, e o que pode significar se estiver demasiado alto ou demasiado baixo."
                                 explicacao = executar_ia_com_fallback(prompt_explica, json_mode=False)
                                 st.info(explicacao)
