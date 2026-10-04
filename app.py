@@ -625,7 +625,6 @@ with tab2:
                     data_padrao_edit = datetime.date.today()
 
                 with st.container(border=True):
-                    # Aumentei a proporção do texto para 5 e deixei 2 para os botões
                     col_texto, col_botoes = st.columns([5, 2]) 
                     
                     with col_texto:
@@ -636,14 +635,14 @@ with tab2:
                     with col_botoes:
                         st.write("") 
                         
-                        # --- BOTÃO DE EDIÇÃO (Menor, sem use_container_width) ---
-                        with st.popover("✏️️ Editar"):
+                        # --- BOTÃO DE EDIÇÃO ---
+                        with st.popover("✏ Editar"):
                             st.markdown(f"#### Editar Registo #{row['id']}")
-                            with st.form(key=f"form_edit_{row['id']}"):
-                                nova_data = st.date_input("🗓️ Data", value=data_padrao_edit, format="DD/MM/YYYY", key=f"d_{row['id']}")
-                                novo_tipo = st.text_input("📄 Tipo de Documento", value=str(row['tipo_documento']), key=f"t_{row['id']}")
-                                novo_medico = st.text_input("👨‍⚕️ Médico / Clínica", value=str(row['medico']), key=f"m_{row['id']}")
-                                novo_resumo = st.text_area("📝 Resumo / Detalhes", value=str(row['resumo']), height=100, key=f"r_{row['id']}")
+                            with st.form(key=f"form_edit_{row['id']}_{idx}"):
+                                nova_data = st.date_input("🗓️ Data", value=data_padrao_edit, format="DD/MM/YYYY", key=f"d_{row['id']}_{idx}")
+                                novo_tipo = st.text_input("📄 Tipo de Documento", value=str(row['tipo_documento']), key=f"t_{row['id']}_{idx}")
+                                novo_medico = st.text_input("👨‍⚕️ Médico / Clínica", value=str(row['medico']), key=f"m_{row['id']}_{idx}")
+                                novo_resumo = st.text_area("📝 Resumo / Detalhes", value=str(row['resumo']), height=100, key=f"r_{row['id']}_{idx}")
                                 
                                 params_atuais = row.get("parametros", {})
                                 if isinstance(params_atuais, str):
@@ -653,7 +652,7 @@ with tab2:
                                         params_atuais = {}
                                 
                                 params_txt = json.dumps(params_atuais, ensure_ascii=False, indent=2)
-                                novos_params_txt = st.text_area("📊 Parâmetros (JSON)", value=params_txt, key=f"p_{row['id']}")
+                                novos_params_txt = st.text_area("📊 Parâmetros (JSON)", value=params_txt, key=f"p_{row['id']}_{idx}")
                                 
                                 btn_salvar_edit = st.form_submit_button("💾 Guardar Alterações", use_container_width=True)
                                 
@@ -669,29 +668,19 @@ with tab2:
 
                         st.write("") # Espaço em branco para separar da exclusão
 
-                        # --- BOTÃO DE EXCLUSÃO (Checkbox lado a lado) ---
-                        col_chk, col_del = st.columns([1.2, 1]) # Sub-colunas
-                        
-                        with col_chk:
-                            confirmar_del = st.checkbox("Confirmar", key=f"chk_{row['id']}")
-                            
-                        with col_del:
-                            # Botão menor, sem use_container_width
+                        # --- BOTÃO DE EXCLUSÃO (Confirmar logo abaixo do Apagar) ---
+                        key_chk = f"chk_{row['id']}_{idx}"
+                        key_btn = f"excluir_{row['id']}_{idx}"
 
-
-
-                            # --- BOTÃO DE EXCLUSÃO (Um por baixo do outro) ---
-                            if st.button("🗑️ Apagar", key=f"excluir_{row['id']}", help="Marque a caixa abaixo para apagar"):
-                                # Como a checkbox está abaixo, usamos o session_state para verificar se está marcada
-                                if st.session_state.get(f"chk_{row['id']}", False):
-                                    if excluir_registro(row['id']):
-                                        st.toast("Registo apagado!", icon="🗑️")
-                                        st.rerun()
-                                else:
-                                    st.warning("Marque 'Confirmar' 👇")
-                                    
-                            # A checkbox de confirmação fica logo abaixo do botão
-                            confirmar_del = st.checkbox("Confirmar", key=f"chk_{row['id']}")
+                        if st.button("🗑️ Apagar", key=key_btn, help="Marque a caixa abaixo para apagar"):
+                            if st.session_state.get(key_chk, False):
+                                if excluir_registro(row['id']):
+                                    st.toast("Registo apagado!", icon="🗑️")
+                                    st.rerun()
+                            else:
+                                st.warning("Marque 'Confirmar' 👇")
+                                
+                        confirmar_del = st.checkbox("Confirmar", key=key_chk)
 
     else:
         st.info("O histórico está vazio. Adicione um novo registo!")
