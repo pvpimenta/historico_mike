@@ -1146,16 +1146,13 @@ with tab7:
 
     st.markdown("---")
     
-    col_cam, col_up = st.columns(2)
-    with col_cam:
-        foto_camera = st.camera_input("📸 Tirar foto do rótulo")
-    with col_up:
-        foto_upload = st.file_uploader("📂 Ou envie uma foto", type=["jpg", "jpeg", "png"])
+    # Apenas upload de ficheiro, sem a opção da câmara
+    foto_upload = st.file_uploader("📂 Envie uma foto do rótulo", type=["jpg", "jpeg", "png"])
         
-    imagem_rotulo = foto_camera or foto_upload
+    imagem_rotulo = foto_upload
 
     if imagem_rotulo is not None:
-        st.image(imagem_rotulo, caption="Rótulo Capturado", use_container_width=True)
+        st.image(imagem_rotulo, caption="Rótulo Carregado", use_container_width=True)
         
         if st.button("🧠 Analisar Composição Nutricional", type="primary", use_container_width=True):
             with st.spinner("A ler o rótulo e a procurar informações da marca..."):
