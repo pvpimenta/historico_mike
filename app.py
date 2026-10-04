@@ -37,7 +37,6 @@ supabase: Client = create_client(supabase_url, supabase_key)
 # PROVEDORES DE IA E SISTEMA DE FALLBACK
 # ==========================================
 
-
 def _chamar_gemini(prompt, json_mode=False):
     api_key = st.secrets.get("GEMINI_API_KEY")
     if not api_key:
@@ -47,7 +46,7 @@ def _chamar_gemini(prompt, json_mode=False):
     config = types.GenerateContentConfig(response_mime_type="application/json") if json_mode else None
     
     response = client.models.generate_content(
-        model="gemini-3.8-flash",  # Modelo estável e gratuito do Google
+        model="gemini-1.5-flash",  # Modelo estável do Google
         contents=prompt,
         config=config
     )
@@ -59,9 +58,6 @@ def _chamar_groq(prompt, json_mode=False):
     if not api_key:
         raise ValueError("Chave GROQ_API_KEY não encontrada nos Secrets.")
 
-    # Modelo atual recomendado pela Groq.
-    # Também pode ser definido nos Secrets:
-    # GROQ_MODEL = "openai/gpt-oss-120b"
     groq_model = st.secrets.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
     client = OpenAI(
@@ -73,7 +69,7 @@ def _chamar_groq(prompt, json_mode=False):
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
         if "json" not in prompt.lower():
-            prompt += "\\nResponda estritamente no formato JSON."
+            prompt += "\nResponda estritamente no formato JSON."
 
     response = client.chat.completions.create(
         model=groq_model,
@@ -86,13 +82,8 @@ def _chamar_groq(prompt, json_mode=False):
 
 
 def executar_ia_com_fallback(prompt, json_mode=False):
-    """
-    Ordem de execução:
-    1. Gemini (Google - gemini-3.8-flash)
-    2. Groq (OpenAI GPT-OSS 120B - Fallback)
-    """
     provedores = [
-        ("Gemini (Google gemini-3.8-flash)", _chamar_gemini),
+        ("Gemini (Google gemini-1.5-flash)", _chamar_gemini),
         ("Groq (openai/gpt-oss-120b)", _chamar_groq)
     ]
 
@@ -177,6 +168,22 @@ def excluir_registro(id_registro):
         return True
     except Exception as e:
         st.error(f"Erro ao excluir do Supabase: {e}")
+        return False
+
+def atualizar_registro(id_registro, paciente, data, medico, tipo_documento, resumo, parametros):
+    try:
+        dados = {
+            "paciente": paciente,
+            "data": data,
+            "medico": medico,
+            "tipo_documento": tipo_documento,
+            "resumo": resumo,
+            "parametros": parametros
+        }
+        supabase.table("historico").update(dados).eq("id", id_registro).execute()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao atualizar no Supabase: {e}")
         return False
 
 def gerar_backup_json():
@@ -279,26 +286,6 @@ def gerar_pdf_bytes(texto_relatorio):
             
     return bytes(pdf.output())
 
-
-
-def atualizar_registro(id_registro, paciente, data, medico, tipo_documento, resumo, parametros):
-    try:
-        dados = {
-            "paciente": paciente,
-            "data": data,
-            "medico": medico,
-            "tipo_documento": tipo_documento,
-            "resumo": resumo,
-            "parametros": parametros
-        }
-        supabase.table("historico").update(dados).eq("id", id_registro).execute()
-        return True
-    except Exception as e:
-        st.error(f"Erro ao atualizar no Supabase: {e}")
-        return False
-
-
-
 # ==========================================
 # FUNÇÕES DO PERFIL (FOTO E DATA NASCIMENTO)
 # ==========================================
@@ -309,7 +296,6 @@ def image_to_base64(image):
     return base64.b64encode(buffered.getvalue()).decode()
 
 def calcular_idade(data_nascimento):
-    """Calcula a idade em anos e meses com base na data de nascimento."""
     if not data_nascimento:
         return ""
     hoje = datetime.date.today()
@@ -377,16 +363,15 @@ st.set_page_config(page_title="Relatório do Pet", page_icon="🐕", layout="cen
 # BARRA LATERAL (PERFIL)
 # ==========================================
 with st.sidebar:
-    with st.sidebar:
-        st.title("🐾 Perfil do Pet")
-        nome_perfil = st.text_input("Nome do Paciente", value="Mike", key="nome_perfil")
-    
-        perfil_dados = carregar_perfil(nome_perfil)
-        raca_atual = perfil_dados.get("raca", "")
-        raca_input = st.text_input("🐕 Espécie / Raça", value=raca_atual, placeholder="Ex: Cão - Golden Retriever")
-        st.markdown("---")
-        foto_b64 = perfil_dados.get("foto_base64")
-        data_nasc_str = perfil_dados.get("data_nascimento")
+    st.title("🐾 Perfil do Pet")
+    nome_perfil = st.text_input("Nome do Paciente", value="Mike", key="nome_perfil")
+
+    perfil_dados = carregar_perfil(nome_perfil)
+    raca_atual = perfil_dados.get("raca", "")
+    raca_input = st.text_input("🐕 Espécie / Raça", value=raca_atual, placeholder="Ex: Cão - Golden Retriever")
+    st.markdown("---")
+    foto_b64 = perfil_dados.get("foto_base64")
+    data_nasc_str = perfil_dados.get("data_nascimento")
     
     if data_nasc_str:
         try:
@@ -406,8 +391,7 @@ with st.sidebar:
     else:
         st.info("Nenhuma foto de perfil cadastrada. Envie uma abaixo!")
 
-    # Campo de Data de Nascimento e Contador de Idade
-    data_nasc_input = st.date_input("🎂 Data de Nascimento", value=data_nasc_val,format="DD/MM/YYYY", key="data_nasc_input")
+    data_nasc_input = st.date_input("🎂 Data de Nascimento", value=data_nasc_val, format="DD/MM/YYYY", key="data_nasc_input")
     
     if data_nasc_input and data_nasc_input <= datetime.date.today():
         idade_formatada = calcular_idade(data_nasc_input)
@@ -434,12 +418,11 @@ with col_titulo:
     st.title(f"🐶 Relatório do {nome_perfil}")
     st.markdown("*O diário inteligente de saúde do seu pet.*")
 
-# Verifica disponibilidade das chaves
 tem_gemini = "GEMINI_API_KEY" in st.secrets
 tem_groq = "GROQ_API_KEY" in st.secrets
 
 if not (tem_gemini or tem_groq):
-    st.error("⚠️ Nenhuma chave de IA (GEMINI_API_KEY ou GROQ_API_KEY) foi encontrada nos Secrets.")
+    st.error("⚠️️ Nenhuma chave de IA (GEMINI_API_KEY ou GROQ_API_KEY) foi encontrada nos Secrets.")
 
 st.markdown("---")
 
@@ -452,7 +435,6 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "💊 Medicamentos",
     "🥩 Nutrição"
 ])
-
 
 # ==========================================
 # SEPARADOR 1: NOVO REGISTO
@@ -517,7 +499,6 @@ with tab1:
             
             dados = st.session_state.dados_ia
             
-            # Tratamento flexível da data (suporta ISO AAAA-MM-DD e DD-MM-AAAA)
             try:
                 raw_data = dados.get("data", "")
                 data_parsed = pd.to_datetime(raw_data, dayfirst=True, errors='coerce')
@@ -555,7 +536,6 @@ with tab1:
 # ==========================================
 # SEPARADOR 2: HISTÓRICO
 # ==========================================
-# --- MODAL DE EDIÇÃO AMPLO ---
 @st.dialog("✏️ Editar Registo do Histórico", width="large")
 def modal_editar_registro(row, idx):
     try:
@@ -568,33 +548,14 @@ def modal_editar_registro(row, idx):
         col_m1, col_m2 = st.columns(2)
         
         with col_m1:
-            nova_data = st.date_input(
-                "🗓️ Data do Documento", 
-                value=data_padrao_edit, 
-                format="DD/MM/YYYY", 
-                key=f"md_{row['id']}_{idx}"
-            )
-            novo_tipo = st.text_input(
-                "📄 Tipo de Documento (ex: Consulta, Exame, Receita)", 
-                value=str(row['tipo_documento']), 
-                key=f"mt_{row['id']}_{idx}"
-            )
+            nova_data = st.date_input("🗓️ Data do Documento", value=data_padrao_edit, format="DD/MM/YYYY", key=f"md_{row['id']}_{idx}")
+            novo_tipo = st.text_input("📄 Tipo de Documento", value=str(row['tipo_documento']), key=f"mt_{row['id']}_{idx}")
 
         with col_m2:
-            novo_medico = st.text_input(
-                "👨‍⚕️ Médico / Clínica", 
-                value=str(row['medico']), 
-                key=f"mm_{row['id']}_{idx}"
-            )
+            novo_medico = st.text_input("👨‍⚕️ Médico / Clínica", value=str(row['medico']), key=f"mm_{row['id']}_{idx}")
 
-        novo_resumo = st.text_area(
-            "📝 Resumo / Detalhes", 
-            value=str(row['resumo']), 
-            height=120, 
-            key=f"mr_{row['id']}_{idx}"
-        )
+        novo_resumo = st.text_area("📝 Resumo / Detalhes", value=str(row['resumo']), height=120, key=f"mr_{row['id']}_{idx}")
         
-        # Trata o parâmetro técnico em segundo plano sem incomodar o utilizador
         params_atuais = row.get("parametros", {})
         if isinstance(params_atuais, str):
             try:
@@ -602,16 +563,10 @@ def modal_editar_registro(row, idx):
             except Exception:
                 params_atuais = {}
 
-        # Guarda os dados técnicos dentro de um menu colapsável
         with st.expander("⚙️ Opções Avançadas (Dados Técnicos / JSON)"):
             st.caption("Esta secção é destinada a configurações estruturadas avançadas.")
             params_txt = json.dumps(params_atuais, ensure_ascii=False, indent=2)
-            novos_params_txt = st.text_area(
-                "Parâmetros estruturados", 
-                value=params_txt, 
-                height=100, 
-                key=f"mp_{row['id']}_{idx}"
-            )
+            novos_params_txt = st.text_area("Parâmetros estruturados", value=params_txt, height=100, key=f"mp_{row['id']}_{idx}")
 
         col_f1, col_f2 = st.columns([1, 1])
         with col_f1:
@@ -623,7 +578,6 @@ def modal_editar_registro(row, idx):
             except Exception:
                 novos_params = params_atuais
             
-            # Formatação explícita da data no formato padrão DD/MM/YYYY
             data_formatada_salvar = nova_data.strftime("%d/%m/%Y")
             
             sucesso = atualizar_registro(
@@ -641,13 +595,10 @@ def modal_editar_registro(row, idx):
                 st.rerun()
 
 
-# --- ABA 2: HISTÓRICO ---
-# --- ABA 2: HISTÓRICO ---
 with tab2:
     df = carregar_historico()
     
     if not df.empty and "paciente" in df.columns:
-        # Remove nulos, limpa textos e obtém valores únicos ordenados
         pacientes = sorted([str(p).strip() for p in df["paciente"].dropna().unique() if str(p).strip()])
         
         if not pacientes:
@@ -663,7 +614,6 @@ with tab2:
                 
             ordem_asc = (ordem_ordem == "Cronológica (Mais antigo)")
             
-            # Normalização de datas para ordenação
             df['data_dt'] = pd.to_datetime(df['data'], errors='coerce', dayfirst=True)
             df_filtrado = df[df["paciente"].astype(str) == paciente_sel].sort_values(by="data_dt", ascending=ordem_asc)
             
@@ -721,14 +671,11 @@ with tab2:
                             
                         with col_botoes:
                             st.write("") 
-                            
-                            # --- BOTÃO QUE ABRE O MODAL LARGO DE EDIÇÃO ---
-                            if st.button("✏️️ Editar", key=f"btn_modal_edit_{row['id']}_{idx}"):
+                            if st.button("✏ Editar", key=f"btn_modal_edit_{row['id']}_{idx}"):
                                 modal_editar_registro(row, idx)
 
                             st.write("") 
 
-                            # --- BOTÃO DE EXCLUSÃO ---
                             key_chk = f"chk_{row['id']}_{idx}"
                             key_btn = f"excluir_{row['id']}_{idx}"
 
@@ -741,135 +688,6 @@ with tab2:
                                     st.warning("Marque 'Confirmar' 👇")
                                     
                             st.checkbox("Confirmar", key=key_chk)
-
-    else:
-        st.info("O histórico está vazio. Adicione um novo registo!")
-# ==========================================
-# SEPARADOR 2: HISTÓRICO (Com Edição e Exclusão)
-# ==========================================
-with tab2:
-    df = carregar_historico()
-    
-    if not df.empty:
-        pacientes = list(df["paciente"].unique())
-        
-        col_filtro1, col_filtro2, col_filtro3 = st.columns([2, 2, 1.5])
-        with col_filtro1:
-            paciente_sel = st.selectbox("🐶 Selecione o Pet/Paciente:", pacientes)
-        with col_filtro2:
-            busca = st.text_input("🔍 Procurar:")
-        with col_filtro3:
-            ordem_ordem = st.selectbox("⏳ Ordem:", ["Cronológica (Mais antigo)", "Recentes Primeiro"])
-            
-        ordem_asc = (ordem_ordem == "Cronológica (Mais antigo)")
-        
-        # Normalização de datas para ordenação
-        df['data_dt'] = pd.to_datetime(df['data'], errors='coerce', dayfirst=True)
-        df_filtrado = df[df["paciente"] == paciente_sel].sort_values(by="data_dt", ascending=ordem_asc)
-        
-        if busca:
-            df_filtrado = df_filtrado[
-                df_filtrado['medico'].str.contains(busca, case=False, na=False) |
-                df_filtrado['resumo'].str.contains(busca, case=False, na=False) |
-                df_filtrado['tipo_documento'].str.contains(busca, case=False, na=False)
-            ]
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        col_met1, col_met2, col_met3 = st.columns(3)
-        col_met1.metric("Registos", len(df_filtrado))
-        col_met2.metric("Locais/Clínicas", df_filtrado['medico'].nunique())
-        
-        csv = df_filtrado.drop(columns=['data_dt'], errors='ignore').to_csv(index=False).encode('utf-8')
-        json_backup = gerar_backup_json()
-        
-        with col_met3:
-            st.download_button(
-                label="📥 Baixar CSV",
-                data=csv,
-                file_name=f"historico_{paciente_sel}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-            if json_backup:
-                st.download_button(
-                    label="🛡️ Backup (JSON)",
-                    data=json_backup,
-                    file_name=f"backup_completo_{datetime.date.today().strftime('%d_%m_%Y')}.json",
-                    mime="application/json",
-                    use_container_width=True
-                )
-            
-        st.markdown("---")
-
-        if df_filtrado.empty:
-            st.warning("Nenhum registo encontrado com essa palavra.")
-        else:
-            for idx, row in df_filtrado.iterrows():
-                try:
-                    data_dt_obj = pd.to_datetime(row['data'], dayfirst=True)
-                    data_formatada = data_dt_obj.strftime('%d/%m/%Y')
-                    data_padrao_edit = data_dt_obj.date()
-                except Exception:
-                    data_formatada = str(row['data'])
-                    data_padrao_edit = datetime.date.today()
-
-                with st.container(border=True):
-                    col_texto, col_botoes = st.columns([5, 2]) 
-                    
-                    with col_texto:
-                        st.subheader(f"🗓️ {data_formatada} - {row['tipo_documento']}")
-                        st.markdown(f"**🏥 Clínica/Médico:** {row['medico']}")
-                        st.markdown(f"**📝 Detalhes:** {row['resumo']}")
-                        
-                    with col_botoes:
-                        st.write("") 
-                        
-                        # --- BOTÃO DE EDIÇÃO ---
-                        with st.popover("✏ Editar"):
-                            st.markdown(f"#### Editar Registo #{row['id']}")
-                            with st.form(key=f"form_edit_{row['id']}_{idx}"):
-                                nova_data = st.date_input("🗓️ Data", value=data_padrao_edit, format="DD/MM/YYYY", key=f"d_{row['id']}_{idx}")
-                                novo_tipo = st.text_input("📄 Tipo de Documento", value=str(row['tipo_documento']), key=f"t_{row['id']}_{idx}")
-                                novo_medico = st.text_input("👨‍⚕️ Médico / Clínica", value=str(row['medico']), key=f"m_{row['id']}_{idx}")
-                                novo_resumo = st.text_area("📝 Resumo / Detalhes", value=str(row['resumo']), height=100, key=f"r_{row['id']}_{idx}")
-                                
-                                params_atuais = row.get("parametros", {})
-                                if isinstance(params_atuais, str):
-                                    try:
-                                        params_atuais = json.loads(params_atuais)
-                                    except Exception:
-                                        params_atuais = {}
-                                
-                                params_txt = json.dumps(params_atuais, ensure_ascii=False, indent=2)
-                                novos_params_txt = st.text_area("📊 Parâmetros (JSON)", value=params_txt, key=f"p_{row['id']}_{idx}")
-                                
-                                btn_salvar_edit = st.form_submit_button("💾 Guardar Alterações", use_container_width=True)
-                                
-                                if btn_salvar_edit:
-                                    try:
-                                        novos_params = json.loads(novos_params_txt)
-                                    except Exception:
-                                        novos_params = params_atuais
-                                        
-                                    if atualizar_registro(row['id'], row['paciente'], str(nova_data), novo_medico, novo_tipo, novo_resumo, novos_params):
-                                        st.toast("Registo atualizado com sucesso!", icon="✅")
-                                        st.rerun()
-
-                        st.write("") # Espaço em branco para separar da exclusão
-
-                        # --- BOTÃO DE EXCLUSÃO (Confirmar logo abaixo do Apagar) ---
-                        key_chk = f"chk_{row['id']}_{idx}"
-                        key_btn = f"excluir_{row['id']}_{idx}"
-
-                        if st.button("🗑️ Apagar", key=key_btn, help="Marque a caixa abaixo para apagar"):
-                            if st.session_state.get(key_chk, False):
-                                if excluir_registro(row['id']):
-                                    st.toast("Registo apagado!", icon="🗑️")
-                                    st.rerun()
-                            else:
-                                st.warning("Marque 'Confirmar' 👇")
-                                
-                        confirmar_del = st.checkbox("Confirmar", key=key_chk)
 
     else:
         st.info("O histórico está vazio. Adicione um novo registo!")
@@ -1313,13 +1131,12 @@ with tab6:
         st.info("O histórico está vazio.")
 
 # ==========================================
-# SEPARADOR 7: ASSISTENTE IA & DÚVIDAS VETERINÁRIAS
+# SEPARADOR 7: NUTRIÇÃO
 # ==========================================
 with tab7:
     st.markdown("### 🥩 Histórico Alimentar e Nutrição")
     st.write("Registe a dieta do paciente fotografando os **Níveis de Garantia** da embalagem da ração.")
     
-    # 1. Seleção do Paciente
     df_pacientes = carregar_historico()
     lista_pacientes = list(df_pacientes["paciente"].unique()) if not df_pacientes.empty else []
     
@@ -1329,7 +1146,6 @@ with tab7:
 
     st.markdown("---")
     
-    # 2. Captura da Imagem (Câmera ou Upload)
     col_cam, col_up = st.columns(2)
     with col_cam:
         foto_camera = st.camera_input("📸 Tirar foto do rótulo")
@@ -1338,14 +1154,11 @@ with tab7:
         
     imagem_rotulo = foto_camera or foto_upload
 
-    # 3. Processamento da IA (Visão)
     if imagem_rotulo is not None:
         st.image(imagem_rotulo, caption="Rótulo Capturado", use_container_width=True)
         
         if st.button("🧠 Analisar Composição Nutricional", type="primary", use_container_width=True):
             with st.spinner("A ler o rótulo e a procurar informações da marca..."):
-                
-                # Preparamos o prompt multimodal
                 prompt_visao = """
                 Aja como um nutrólogo veterinário. Leia esta imagem do rótulo de uma ração para pets.
                 Extraia as seguintes informações e retorne EXCLUSIVAMENTE um JSON com esta estrutura:
@@ -1364,33 +1177,31 @@ with tab7:
                 """
                 
                 try:
-                    import google.generativeai as genai
-                    from PIL import Image
-                    import json
+                    api_key = st.secrets.get("GEMINI_API_KEY")
+                    if not api_key:
+                        raise ValueError("Chave GEMINI_API_KEY não encontrada nos Secrets.")
                     
-                    # Convertendo a imagem do Streamlit para o formato PIL que o Gemini aceita
+                    client_gen = genai.Client(api_key=api_key)
                     img_pil = Image.open(imagem_rotulo)
                     
-                    # Chamada direta ao modelo Gemini 1.5 Flash (o mais rápido para visão)
-                    modelo_visao = genai.GenerativeModel('gemini-1.5-flash')
-                    resposta_visao = modelo_visao.generate_content([prompt_visao, img_pil])
+                    resposta_visao = client_gen.models.generate_content(
+                        model="gemini-1.5-flash",
+                        contents=[prompt_visao, img_pil],
+                        config=types.GenerateContentConfig(response_mime_type="application/json")
+                    )
                     
-                    # Limpeza do JSON (remove as crases que o markdown da IA às vezes adiciona)
                     texto_json = resposta_visao.text.replace("```json", "").replace("```", "").strip()
                     dados_dieta = json.loads(texto_json)
                     
-                    # Guarda na memória temporária para a etapa de confirmação
                     st.session_state['dados_dieta_temp'] = dados_dieta
                     
                 except Exception as e:
                     st.error(f"Erro ao analisar a imagem: {e}")
                     
-    # 4. Confirmação e Registo
     if 'dados_dieta_temp' in st.session_state:
         st.success("✅ Rótulo lido com sucesso! Verifique os dados abaixo:")
         dados = st.session_state['dados_dieta_temp']
         
-        # Exibição bonita num cartão
         with st.container(border=True):
             st.markdown(f"#### 🍲 {dados.get('marca', 'Marca Indefinida')}")
             col1, col2, col3 = st.columns(3)
@@ -1402,10 +1213,9 @@ with tab7:
             st.write(f"**Ingredientes base:** {dados.get('ingredientes_principais', 'N/A')}")
             
         if st.button("💾 Salvar Histórico Alimentar", use_container_width=True):
-            # Salva na memória do paciente para a Análise Cruzada conseguir ler
             st.session_state[f"dieta_{paciente_nutri}"] = dados 
             
             st.balloons()
             st.success(f"Dieta de {paciente_nutri} atualizada no sistema!")
-            del st.session_state['dados_dieta_temp'] # Limpa a tela após salvar
-            st.rerun() # Dá refresh para voltar ao estado inicial
+            del st.session_state['dados_dieta_temp']
+            st.rerun()
